@@ -374,8 +374,8 @@ app.post('/create-post', async (req, res) => {
       .eq('user_id', author_id)
       .maybeSingle()
 
-    if (employeeErr || !employee) {
-      return res.status(403).json({ error: 'not authorized as nonprofit employee' })
+    if (profErr || !profile || !profile.is_org || profile.org_id !== org_id) {
+      return res.status(403).json({ error: 'not authorized as org admin' })
     }
 
     const { data, error } = await supabase
