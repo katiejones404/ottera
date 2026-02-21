@@ -1,0 +1,5 @@
+./nonprofit_data
+nonprofit_data
+node_modules
+.env
+venv
