@@ -1,71 +1,76 @@
+// frontend/.../PublicLanding.tsx
+import React, { useRef } from "react";
+
 type PublicLandingProps = {
-  activePage: string;
-  onEnterPortal: () => void;
+  onEnterPortal: () => void; // existing: opens portal / sign-up or navigates to portal
+  onNavigate?: (page: string) => void; // optional parent nav handler (e.g., "resources")
 };
 
-export default function PublicLanding({
-  activePage,
-  onEnterPortal,
-}: PublicLandingProps) {
-  if (activePage === "about") {
-    return (
-      <section className="panel">
-        <h1>About Ottera</h1>
-        <p>
-          Ottera is a community message board where people facing financial hardship
-          can find nearby help. Nonprofits, shelters, volunteers, and distributors
-          share trusted opportunities in one place.
-        </p>
-      </section>
-    );
-  }
+export default function PublicLanding({ onEnterPortal, onNavigate }: PublicLandingProps) {
+  const howRef = useRef<HTMLElement | null>(null);
 
-  if (activePage === "resources") {
-    return (
-      <section className="panel">
-        <h1>Find Resources</h1>
-        <div className="card-grid">
-          <article className="card">
-            <h2>Food</h2>
-            <p>Search pantries and free meal events by city and day.</p>
-            <button type="button" className="solid" disabled>
-              Subscribe to Distributor (Log in required)
-            </button>
-          </article>
-          <article className="card">
-            <h2>Clothing</h2>
-            <p>Browse shelters and clothing closets accepting visitors this week.</p>
-            <button type="button" className="solid" disabled>
-              Message Clothing Shelter (Log in required)
-            </button>
-          </article>
-          <article className="card">
-            <h2>Shelter + Events</h2>
-            <p>View overnight shelter availability and free community events.</p>
-            <button type="button" className="solid" onClick={onEnterPortal}>
-              Create account to RSVP
-            </button>
-          </article>
-        </div>
-      </section>
-    );
-  }
+  const goToResources = () => {
+    if (onNavigate) onNavigate("resources");
+    else onEnterPortal();
+  };
+
+  const scrollToHowItWorks = () => {
+    if (howRef.current) {
+      howRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.location.hash = "#how-it-works";
+    }
+  };
 
   return (
-    <section className="panel">
-      <p className="eyebrow">Community aid, simplified</p>
-      <h1>Find help fast. Share help locally.</h1>
-      <p>
-        Ottera helps community members discover food, clothing, shelter, and free
-        events in their city. Make an account to connect with volunteers and
-        distributors.
-      </p>
-      <div className="hero-actions">
-        <button type="button" className="solid" onClick={onEnterPortal}>
-          Find Resources
-        </button>
-        <button type="button">How It Works</button>
-      </div>
-    </section>
+    <main className="landing-root">
+      <section className="hero">
+        <div className="hero-left">
+          <h1 className="hero-title">
+            Ottera
+          </h1>
+          <h2 className="slogan">
+            Keeping communities afloat.
+          </h2>
+
+          <p className="hero-copy">
+            Ottera helps connect organizations with volunteers and community members in need so they can easily 
+            find food, clothing, shelter, and other resources all in one place.
+          </p>
+
+          <div className="hero-actions">
+            <button className="btn btn-primary" onClick={goToResources}>
+              Find Resources
+            </button>
+
+            <button className="btn btn-secondary" onClick={scrollToHowItWorks}>
+              How It Works
+            </button>
+          </div>
+        </div>
+
+        <div className="hero-right" aria-hidden>
+          {/* Put the otter image at public/images/otters.png (ask CSS teammate for size) */}
+          <img
+            src="/images/otters.png"
+            alt="Group of otters holding hands"
+            className="hero-otter"
+          />
+        </div>
+      </section>
+
+      <section id="how-it-works" ref={howRef} className="how-it-works">
+        <h2>How Ottera Works</h2>
+        <ol>
+          <li><strong>Create an account:</strong> Sign up to find local resources, recieve message from organizations, or find volunteer options.</li>
+          <li><strong>Find resources:</strong> Browse food, clothing, shelter, and events by category and location.</li>
+          <li><strong>Organization updates:</strong> Nonprofits and shelters can announce openings and urgent needs.</li>
+        </ol>
+
+        <p className="how-cta">
+          <button className="btn btn-primary" onClick={goToResources}>Get started</button>
+        </p>
+      </section>
+    </main>
   );
 }
