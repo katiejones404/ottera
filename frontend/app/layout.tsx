@@ -13,7 +13,8 @@ const londrina = Londrina_Solid({
 
 export const metadata: Metadata = {
   title: "Ottera",
-  description: "Ottera PearlHacks 2026 prototype",
+  description: "Ottera PearlHacks 2026 Prototype",
+  icons: { icon: '/favicon.png' },
 };
 
 export default function RootLayout({
