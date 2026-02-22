@@ -8,6 +8,7 @@ export type ResourcePost = {
   imageLabel: string;
   distanceMiles: number;
   zipcodes: string[];
+  previewGroup?: "pantry" | "distribution" | "clothing" | "other";
 };
 
 export type ResourceCategory = {
@@ -17,6 +18,29 @@ export type ResourceCategory = {
   detailDescription: string;
   ctaLabel: string;
   posts: ResourcePost[];
+};
+
+export type ResourceListingRecord = {
+  id: string;
+  title: string;
+  description: string;
+  category_slug: ResourceCategorySlug;
+  listing_source: "individual" | "nonprofit";
+  nonprofit_id?: string | null;
+  posted_by_username?: string | null;
+  location_label: string;
+  zip_codes: string[];
+  website?: string | null;
+  contact_info?: Record<string, unknown> | null;
+  distribution_schedule?: string | null;
+  status: string;
+  nonprofits?: {
+    id: string;
+    name: string;
+    website?: string | null;
+    approval_status?: string | null;
+    focus_area?: string | null;
+  } | null;
 };
 
 export const MIN_SEARCH_DISTANCE_MILES = 0;
@@ -238,4 +262,77 @@ export function getFilteredPosts(
     .filter(({ computedDistance }) => computedDistance <= boundedDistance)
     .sort((a, b) => a.computedDistance - b.computedDistance)
     .map(({ post }) => post);
+}
+
+const CATEGORY_META: Record<ResourceCategorySlug, Omit<ResourceCategory, "posts">> = {
+  pantry: {
+    slug: "pantry",
+    title: "Pantry",
+    sectionDescription: "Search pantries and free meal events.",
+    detailDescription: "More pantries and free meal events in your area.",
+    ctaLabel: "Explore more dining options",
+  },
+  closet: {
+    slug: "closet",
+    title: "Closet",
+    sectionDescription: "Browse shelters and closets accepting visitors this week.",
+    detailDescription: "More closets and clothing resources near you.",
+    ctaLabel: "Explore more from the closet",
+  },
+  shelters: {
+    slug: "shelters",
+    title: "Shelters",
+    sectionDescription: "Browse shelter availability and free community events.",
+    detailDescription: "More shelters and support events close to your zipcode.",
+    ctaLabel: "Explore more shelters",
+  },
+};
+
+const categoryEmoji: Record<ResourceCategorySlug, string> = {
+  pantry: "🍽️",
+  closet: "👕",
+  shelters: "🏠",
+};
+
+export function buildCategoriesFromListings(listings: ResourceListingRecord[]): ResourceCategory[] {
+  const grouped: Record<ResourceCategorySlug, ResourcePost[]> = {
+    pantry: [],
+    closet: [],
+    shelters: [],
+  };
+
+  for (const listing of listings) {
+    const normalizedFocusArea =
+      listing.nonprofits?.focus_area === "other" ? "miscellaneous" : listing.nonprofits?.focus_area;
+
+    const cat: ResourceCategorySlug =
+      normalizedFocusArea === "miscellaneous" ? "closet" : listing.category_slug;
+    if (!grouped[cat]) continue;
+
+    grouped[cat].push({
+      id: listing.id,
+      title: listing.title,
+      description:
+        listing.distribution_schedule && listing.distribution_schedule.length > 0
+          ? `${listing.description} (${listing.distribution_schedule})`
+          : listing.description,
+      location: listing.location_label,
+      imageLabel: categoryEmoji[cat],
+      distanceMiles: 25,
+      zipcodes: Array.isArray(listing.zip_codes) ? listing.zip_codes : [],
+      previewGroup:
+        normalizedFocusArea === "miscellaneous"
+          ? "other"
+          : cat === "pantry"
+            ? "pantry"
+            : cat === "shelters"
+              ? "distribution"
+              : "clothing",
+    });
+  }
+
+  return (Object.keys(CATEGORY_META) as ResourceCategorySlug[]).map((slug) => ({
+    ...CATEGORY_META[slug],
+    posts: grouped[slug],
+  }));
 }

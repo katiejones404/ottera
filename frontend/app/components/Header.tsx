@@ -6,6 +6,7 @@ type HeaderProps = {
   activePage: string;
   onNavigate: (page: string) => void;
   session: Account | null;
+  sessionRoles?: string[];
   onSignOut: () => void;
 };
 
@@ -13,6 +14,7 @@ export default function Header({
   activePage,
   onNavigate,
   session,
+  sessionRoles = [],
   onSignOut,
 }: HeaderProps) {
   const navRef = useRef<HTMLElement>(null);
@@ -69,6 +71,13 @@ export default function Header({
         >
           About Us
         </button>
+        <button
+          type="button"
+          className={activePage === "partner" ? "active" : ""}
+          onClick={() => onNavigate("partner")}
+        >
+          Partner with Us
+        </button>
 
         {/* sliding underline */}
         <span
@@ -89,6 +98,19 @@ export default function Header({
             </button>
             {menuOpen && (
               <div className="user-dropdown">
+                <Link href="/portal" className="dropdown-link" onClick={() => setMenuOpen(false)}>
+                  User Portal
+                </Link>
+                {sessionRoles.includes("nonprofit_employee") && (
+                  <Link href="/nonprofit-portal" className="dropdown-link" onClick={() => setMenuOpen(false)}>
+                    Nonprofit Portal
+                  </Link>
+                )}
+                {sessionRoles.includes("admin") && (
+                  <Link href="/admin-portal" className="dropdown-link" onClick={() => setMenuOpen(false)}>
+                    Admin Portal
+                  </Link>
+                )}
                 <button
                   type="button"
                   className="dropdown-item"
