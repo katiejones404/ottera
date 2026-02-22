@@ -914,10 +914,14 @@ export default function PublicLanding({
                     <button
                       type="button"
                       className={isAuthenticated ? "btn-primary" : "btn-ghost"}
-                      disabled={!isAuthenticated || !row.slug}
-                      style={!isAuthenticated || !row.slug ? { opacity: 0.55, cursor: "not-allowed" } : {}}
+                      disabled={isAuthenticated && !row.slug}
+                      style={isAuthenticated && !row.slug ? { opacity: 0.55, cursor: "not-allowed" } : {}}
                       onClick={() => {
-                        if (!isAuthenticated || !row.slug) return;
+                        if (!isAuthenticated) {
+                          router.push("/login");
+                          return;
+                        }
+                        if (!row.slug) return;
                         const normalizedZip = zipcode.trim().slice(0, 5);
                         const zipQuery = /^\d{5}$/.test(normalizedZip) ? `?zip=${normalizedZip}` : "";
                         router.push(`/resources/${row.slug}${zipQuery}`);
