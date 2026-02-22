@@ -6,19 +6,46 @@ import {
   MAX_SEARCH_DISTANCE_MILES,
   MIN_SEARCH_DISTANCE_MILES,
   type ResourceCategory,
+  type ResourceListingRecord,
+  buildCategoriesFromListings,
   getFilteredPosts,
 } from "../data/resources";
 import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
+import { fetchResourceListings } from "../lib/api";
 
 type ResourceCategoryPageProps = {
   category: ResourceCategory;
+  initialZip?: string;
 };
 
-export default function ResourceCategoryPage({ category }: ResourceCategoryPageProps) {
+export default function ResourceCategoryPage({
+  category,
+  initialZip,
+}: ResourceCategoryPageProps) {
   const router = useRouter();
-  const [zipcode, setZipcode] = useState("");
+  const [zipcode, setZipcode] = useState(() => (initialZip ? initialZip.slice(0, 5) : ""));
   const [distanceLimit, setDistanceLimit] = useState<number>(25);
   const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
+  const [posts, setPosts] = useState(category.posts);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchResourceListings()
+      .then((rows) => {
+        if (cancelled) return;
+        const categories = buildCategoriesFromListings(rows as ResourceListingRecord[]);
+        const match = categories.find((item) => item.slug === category.slug);
+        if (match) setPosts(match.posts);
+      })
+      .catch(() => {
+        setPosts(category.posts);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [category.slug, category.posts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,28 +57,34 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
       };
     }
 
+    if (posts.length === 0) return;
+
     Promise.all(
-      category.posts.map(async (post) => {
+      posts.map(async (post) => {
         const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
         return [post.id, nearest ?? post.distanceMiles] as const;
       })
-    ).then((entries) => {
-      if (cancelled) return;
-      setResolvedDistances(Object.fromEntries(entries));
-    });
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        setResolvedDistances(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedDistances({});
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [zipcode, category.posts]);
+  }, [zipcode, posts]);
 
   const filteredPosts = useMemo(() => {
     const distanceMap = /^\d{5}$/.test(zipcode.trim().slice(0, 5)) ? resolvedDistances : {};
-    return getFilteredPosts(category.posts, zipcode, distanceLimit, distanceMap);
-  }, [category.posts, zipcode, distanceLimit, resolvedDistances]);
+    return getFilteredPosts(posts, zipcode, distanceLimit, distanceMap);
+  }, [posts, zipcode, distanceLimit, resolvedDistances]);
 
   const handleBack = () => {
-    if (window.history.length > 1) {
+    if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
       return;
     }
@@ -122,7 +155,8 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
                 (/^\d{5}$/.test(zipcode.trim().slice(0, 5))
                   ? resolvedDistances[post.id]
                   : undefined) ?? post.distanceMiles
-              ).toFixed(1)} miles away
+              ).toFixed(1)}{" "}
+              miles away
             </p>
           </article>
         ))}

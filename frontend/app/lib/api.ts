@@ -51,3 +51,314 @@ export async function loginUser(payload: {
   if (!res.ok) throw new Error(data?.error || "Login failed");
   return data;
 }
+
+export type ResourceListing = {
+  id: string;
+  title: string;
+  description: string;
+  category_slug: "pantry" | "closet" | "shelters";
+  listing_source: "individual" | "nonprofit";
+  nonprofit_id?: string | null;
+  posted_by_username?: string | null;
+  location_label: string;
+  zip_codes: string[];
+  website?: string | null;
+  contact_info?: Record<string, unknown> | null;
+  distribution_schedule?: string | null;
+  status: string;
+  nonprofits?: {
+    id: string;
+    name: string;
+    website?: string | null;
+    approval_status?: string | null;
+    focus_area?: string | null;
+  } | null;
+};
+
+export async function fetchResourceListings(): Promise<ResourceListing[]> {
+  const res = await fetch(`${API_BASE}/resources/listings`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to fetch resource listings");
+  return (data?.data || []) as ResourceListing[];
+}
+
+export type UserProfile = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  zip_code?: string | null;
+};
+
+export async function fetchMyProfile(accessToken: string): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/users/me/profile`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to load profile");
+  return data?.data as UserProfile;
+}
+
+export async function updateMyProfile(
+  payload: { email?: string; zip_code?: string | null },
+  accessToken: string
+): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/users/me/profile`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to update profile");
+  return data?.data as UserProfile;
+}
+
+export async function updateMyPassword(newPassword: string, accessToken: string) {
+  const res = await fetch(`${API_BASE}/users/me/password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to update password");
+  return data;
+}
+
+export type ManagedNonprofit = {
+  id: string;
+  name: string;
+  website?: string | null;
+  description?: string | null;
+  distribution_schedule?: string | null;
+  zip_codes: string[];
+  addresses: Array<{ line1?: string; city?: string; state?: string; zip?: string }>;
+  focus_area?: string | null;
+  verified_usernames: string[];
+};
+
+export async function fetchManagedNonprofits(accessToken: string): Promise<ManagedNonprofit[]> {
+  const res = await fetch(`${API_BASE}/nonprofits/manage`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to load nonprofit manager data");
+  return (data?.data || []) as ManagedNonprofit[];
+}
+
+export async function updateManagedNonprofit(
+  nonprofitId: string,
+  payload: {
+    description?: string;
+    distribution_schedule?: string;
+    zip_codes?: string[];
+    addresses?: Array<{ line1?: string; city?: string; state?: string; zip?: string }>;
+  },
+  accessToken: string
+): Promise<ManagedNonprofit> {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/manage`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to update nonprofit");
+  return data?.data as ManagedNonprofit;
+}
+
+export async function addVerifiedNonprofitUsername(
+  nonprofitId: string,
+  username: string,
+  accessToken: string
+) {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/admin-usernames`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ username }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to add verified username");
+  return data;
+}
+
+export async function removeVerifiedNonprofitUsername(
+  nonprofitId: string,
+  username: string,
+  accessToken: string
+) {
+  const encoded = encodeURIComponent(username);
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/admin-usernames/${encoded}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to remove verified username");
+  return data;
+}
+
+export async function submitPartnerApplication(payload: {
+  client_name: string;
+  website?: string;
+  description: string;
+  distribution_schedule?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  addresses: Array<{ line1: string; city: string; state: string; zip: string }>;
+  zip_codes: string[];
+  focus_area: "food" | "shelter" | "clothing" | "healthcare" | "miscellaneous" | "other";
+  requested_admin_usernames: string[];
+}) {
+  const res = await fetch(`${API_BASE}/partners/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to submit partner application");
+  return data;
+}
+
+export type PartnerApplication = {
+  id: string;
+  client_name: string;
+  website?: string | null;
+  description: string;
+  distribution_schedule?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  addresses: Array<{ line1?: string; city?: string; state?: string; zip?: string }>;
+  zip_codes: string[];
+  focus_area: string;
+  requested_admin_usernames: string[];
+  status: "pending" | "approved" | "denied";
+  submitted_at: string;
+  reviewed_at?: string | null;
+};
+
+export type CommunityEvent = {
+  id: string;
+  title: string;
+  description: string;
+  location_label: string;
+  start_at: string;
+  end_at?: string | null;
+  zip_codes: string[];
+  website?: string | null;
+  status: "active" | "inactive";
+  posted_by_user_id?: string | null;
+  created_at: string;
+};
+
+export async function fetchPartnerApplications(accessToken: string): Promise<PartnerApplication[]> {
+  const res = await fetch(`${API_BASE}/partners/applications`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to fetch partner applications");
+  return (data?.data || []) as PartnerApplication[];
+}
+
+export async function approvePartnerApplication(applicationId: string, accessToken: string) {
+  const res = await fetch(`${API_BASE}/partners/applications/${applicationId}/approve`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to approve application");
+  return data;
+}
+
+export async function denyPartnerApplication(applicationId: string, accessToken: string) {
+  const res = await fetch(`${API_BASE}/partners/applications/${applicationId}/deny`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to deny application");
+  return data;
+}
+
+export async function fetchEvents(): Promise<CommunityEvent[]> {
+  const res = await fetch(`${API_BASE}/events`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to fetch events");
+  return (data?.data || []) as CommunityEvent[];
+}
+
+export async function createEvent(
+  payload: {
+    title: string;
+    description: string;
+    location_label: string;
+    start_at: string;
+    end_at?: string;
+    zip_codes: string[];
+    website?: string;
+  },
+  accessToken: string
+) {
+  const res = await fetch(`${API_BASE}/events`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to create event");
+  return data;
+}

@@ -3,7 +3,7 @@
 :root {
   --bg: #f5f0e8;
   --panel: #fdfaf4;
-  --ink: #1e2d3d;
+  --ink: #2D5F8D;
   --muted: #6b7a8d;
   --accent: #3a8fc4;
   --accent-strong: #2872a3;
@@ -16,9 +16,19 @@
   box-sizing: border-box;
 }
 
+.full-bleed {
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  width: 100vw;
+  box-sizing: border-box; /* keep padding inside the viewport width */
+}
+
 body {
   margin: 0;
-  font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
+  font-family: "Inter", "Segoe UI", Tahoma, sans-serif; /* or remove if using next/font */
   color: var(--ink);
   background: radial-gradient(
     circle at top,
@@ -26,6 +36,8 @@ body {
     var(--bg) 45%,
     #e8dfd0 100%
   );
+
+  letter-spacing: 0.04em; /* 👈 ADD THIS */
 }
 
 button {
@@ -42,10 +54,6 @@ button:hover {
   background: var(--accent-light);
   border-color: var(--accent);
   color: var(--accent-strong);
-}
-
-a {
-  color: inherit;
 }
 
 button.solid,
@@ -66,12 +74,6 @@ button.solid:hover,
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-}
-
-main {
-  width: min(1300px, 96vw);
-  margin: 1.5rem auto;
-  flex: 1;
 }
 
 /* ── Navbar ─────────────────────────────────────────── */
@@ -109,27 +111,30 @@ main {
 }
 
 .logo {
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
   object-fit: contain;
+  margin-left: -10px;
 }
 
 .brand {
-  font-size: 1.15rem;
+  font-size: 2.5rem;
   font-weight: 700;
   color: var(--ink);
   letter-spacing: -0.02em;
+  /* margin-left:-10px; */
+  /* margin-top:10px; */
 }
 
 .center-nav {
   display: inline-flex;
-  gap: 0.35rem;
+  gap: 1.4rem;
   position: relative;
 }
 
 .nav-indicator {
   position: absolute;
-  bottom: -2px;
+  bottom: -6px;
   height: 2px;
   background: var(--accent);
   border-radius: 999px;
@@ -141,12 +146,24 @@ main {
   font-size: 1rem;
   font-weight: 500;
   letter-spacing: -0.01em;
-  padding: 0.4rem 1rem;
-  border-radius: 999px;
+  padding: 0.2rem 0.1rem;
+  border-radius: 0;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   transition: color 0.2s ease;
+}
+
+.center-nav .nav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-tab-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 .center-nav button:hover {
@@ -243,6 +260,19 @@ main {
   width: 100%;
   border-radius: 8px;
   text-align: left;
+}
+
+.dropdown-link {
+  display: block;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  text-decoration: none;
+}
+
+.dropdown-link:hover {
+  background: var(--clay-pale);
+  border-color: var(--border);
 }
 
 .panel {
@@ -636,6 +666,102 @@ main {
   color: var(--muted);
 }
 
+.partner-main {
+  width: min(900px, 94vw);
+  margin: 1.5rem auto 2.5rem;
+}
+
+.partner-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 1.2rem;
+}
+
+.partner-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.partner-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.partner-form input,
+.partner-form select,
+.partner-form textarea {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.98rem;
+}
+
+.partner-form textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.partner-row {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: 1fr 120px;
+}
+
+.admin-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.admin-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: #fff;
+}
+
+.admin-item h3 {
+  margin: 0 0 0.4rem;
+}
+
+.admin-item p {
+  margin: 0 0 0.35rem;
+}
+
+.admin-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+.portal-tools {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+}
+
+.portal-tool-link {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.8rem;
+  background: #fff;
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.muted-tool {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 @media (max-width: 820px) {
   .main-header {
     grid-template-columns: 1fr;
@@ -985,6 +1111,10 @@ main {
   width: 100%;
   border-radius: 10px;
   text-align: left;
+}
+
+.font-londrina {
+  font-family: "Londrina Solid", cursive;
 }
 
 /* ─────────────────────────────────────────────
