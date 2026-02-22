@@ -89,7 +89,7 @@ button.solid:hover,
 }
 
 main {
-  width: min(1100px, 92vw);
+  width: min(1300px, 96vw);
   margin: 1.5rem auto;
   flex: 1;
 }
@@ -305,6 +305,49 @@ main {
   color: var(--muted);
 }
 
+.resources-panel {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.resources-title {
+  margin: 0;
+  text-align: center;
+}
+
+.zip-filter-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 0.7rem;
+}
+
+.zip-filter-wrap input {
+  width: min(420px, 92vw);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: var(--panel);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.distance-filter-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.distance-filter-buttons button.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.resource-row {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
 .signup-main {
   width: min(700px, 92vw);
   margin: 2rem auto;
@@ -322,6 +365,78 @@ main {
   gap: 0.8rem;
 }
 
+.resource-row-header h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.resource-row-header p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.resource-row-track {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.post-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: #fff;
+  min-height: 285px;
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+}
+
+.post-image {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 95px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #faf7f0;
+}
+
+.post-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.post-card p {
+  margin: 0;
+}
+
+.post-meta {
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.resource-cta {
+  margin-top: 0.25rem;
+  justify-self: start;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@media (max-width: 980px) {
+  .resource-row-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 .signup-form label {
   display: grid;
   gap: 0.35rem;
@@ -382,6 +497,132 @@ main {
   }
 
   .portal-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .resources-title {
+    text-align: left;
+  }
+
+  .zip-filter-wrap {
+    justify-items: stretch;
+  }
+
+  .zip-filter-wrap input {
+    width: 100%;
+    text-align: left;
+  }
+
+  .distance-filter-buttons {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .resource-row-track {
+    grid-template-columns: 1fr;
+  }
+}
+
+.resource-detail-page {
+  width: min(1300px, 96vw);
+  margin: 1.5rem auto 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.resource-detail-header {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.back-link {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  text-decoration: none;
+}
+
+.resource-detail-hero {
+  display: grid;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.resource-detail-hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.2rem);
+}
+
+.resource-detail-hero p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.resource-detail-filters {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+}
+
+.resource-detail-filters input {
+  width: min(420px, 92vw);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: var(--panel);
+  text-align: center;
+  font-size: 1rem;
+}
+
+.results-caption {
+  margin: 0;
+  color: var(--muted);
+}
+
+.resource-results-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.detail-post-card {
+  min-height: 320px;
+}
+
+@media (max-width: 980px) {
+  .resource-results-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .resource-detail-page {
+    width: min(1100px, 92vw);
+  }
+
+  .resource-detail-hero {
+    text-align: left;
+  }
+
+  .resource-detail-filters {
+    justify-items: stretch;
+  }
+
+  .resource-detail-filters input {
+    width: 100%;
+    text-align: left;
+  }
+
+  .results-caption {
+    font-size: 0.95rem;
+  }
+
+  .resource-results-grid {
     grid-template-columns: 1fr;
   }
 }

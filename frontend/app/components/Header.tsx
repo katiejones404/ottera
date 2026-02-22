@@ -17,8 +17,8 @@ export default function Header({
 }: HeaderProps) {
   const navRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const nav = navRef.current;
