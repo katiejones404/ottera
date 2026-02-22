@@ -1,3 +1,4 @@
+"use client";
 
 // AboutUs.tsx
 import React from "react";
