@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Account } from "../data/roles";
 
@@ -5,7 +6,6 @@ type HeaderProps = {
   activePage: string;
   onNavigate: (page: string) => void;
   session: Account | null;
-  onSignIn: () => void;
   onSignOut: () => void;
 };
 
@@ -13,7 +13,6 @@ export default function Header({
   activePage,
   onNavigate,
   session,
-  onSignIn,
   onSignOut,
 }: HeaderProps) {
   const navRef = useRef<HTMLElement>(null);
@@ -78,20 +77,37 @@ export default function Header({
 
       <div className="auth-actions">
         {session ? (
-          <>
-            <span className="username">{session.name}</span>
-            <button type="button" onClick={onSignOut}>
-              Log out
+          <div className="user-menu" ref={menuRef}>
+            <button
+              type="button"
+              className="username-btn"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              {session.name}
             </button>
-          </>
+            {menuOpen && (
+              <div className="user-dropdown">
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onSignOut();
+                  }}
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <>
-            <button type="button" onClick={onSignIn}>
+            <Link href="/login" className="auth-link-btn">
               Log in
-            </button>
-            <button type="button" className="solid" onClick={onSignIn}>
+            </Link>
+            <Link href="/signup" className="solid auth-link-btn">
               Sign up
-            </button>
+            </Link>
           </>
         )}
       </div>
