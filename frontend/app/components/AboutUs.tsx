@@ -111,7 +111,11 @@ export default function AboutUs() {
             <p className="text-2xl text-[#7eabdb] mb-10 leading-relaxed font-[Londrina_Solid]">
               Need support or want to help? Let&apos;s make waves together!
             </p>
-            <button className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-10 py-5 rounded-full text-lg hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid]">
+            <button
+              type="button"
+              onClick={() => (window.location.href = "/signup")}
+              className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-10 py-5 rounded-full text-lg hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid]"
+            >
               Create an Account
             </button>
           </div>
