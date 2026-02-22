@@ -16,7 +16,7 @@ export default function Header({
   onSignOut,
 }: HeaderProps) {
   const navRef = useRef<HTMLElement>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -32,18 +32,6 @@ export default function Header({
       width: btnRect.width,
     });
   }, [activePage]);
-
-  useEffect(() => {
-    const onDocClick = (event: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
 
   return (
     <header className="main-header">

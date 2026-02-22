@@ -870,7 +870,6 @@ export default function PublicLanding({
           </div>
 
           <div className="hero-visual">
-            <div className="float-tag">✓ Free to use, always</div>
             <div className="stat-stack">
               <div className="stat-card">
                 <div className="stat-icon green">🥗</div>
