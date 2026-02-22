@@ -1,3 +1,4 @@
+// app/components/AppNavbar.tsx
 "use client";
 
 import { useSyncExternalStore } from "react";
@@ -13,6 +14,7 @@ function getActivePage(pathname: string, searchParams: URLSearchParams): string 
   if (requested === "about" || requested === "home") {
     return requested;
   }
+
   return "home";
 }
 

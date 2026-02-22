@@ -3,7 +3,7 @@
 :root {
   --bg: #f5f0e8;
   --panel: #fdfaf4;
-  --ink: #1e2d3d;
+  --ink: #2D5F8D;
   --muted: #6b7a8d;
   --accent: #3a8fc4;
   --accent-strong: #2872a3;
@@ -16,9 +16,19 @@
   box-sizing: border-box;
 }
 
+.full-bleed {
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  width: 100vw;
+  box-sizing: border-box; /* keep padding inside the viewport width */
+}
+
 body {
   margin: 0;
-  font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
+  font-family: "Inter", "Segoe UI", Tahoma, sans-serif; /* or remove if using next/font */
   color: var(--ink);
   background: radial-gradient(
     circle at top,
@@ -26,6 +36,8 @@ body {
     var(--bg) 45%,
     #e8dfd0 100%
   );
+
+  letter-spacing: 0.04em; /* 👈 ADD THIS */
 }
 
 button {
@@ -42,10 +54,6 @@ button:hover {
   background: var(--accent-light);
   border-color: var(--accent);
   color: var(--accent-strong);
-}
-
-a {
-  color: inherit;
 }
 
 button.solid,
@@ -66,12 +74,6 @@ button.solid:hover,
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-}
-
-main {
-  width: min(1300px, 96vw);
-  margin: 1.5rem auto;
-  flex: 1;
 }
 
 /* ── Navbar ─────────────────────────────────────────── */
@@ -1109,6 +1111,10 @@ main {
   width: 100%;
   border-radius: 10px;
   text-align: left;
+}
+
+.font-londrina {
+  font-family: "Londrina Solid", cursive;
 }
 
 /* ─────────────────────────────────────────────
