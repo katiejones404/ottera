@@ -10,6 +10,7 @@
   --accent-light: #e8f4fb;
   --line: #ddd8ce;
   --sand-deep: #ede5d5;
+  --global-letter-spacing: 0.06em;
 }
 
 * {
@@ -36,8 +37,24 @@ body {
     var(--bg) 45%,
     #e8dfd0 100%
   );
+}
 
-  letter-spacing: 0.04em; /* 👈 ADD THIS */
+html,
+body,
+body * {
+  letter-spacing: var(--global-letter-spacing) !important;
+}
+
+input,
+textarea,
+select,
+button {
+  letter-spacing: var(--global-letter-spacing) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  letter-spacing: var(--global-letter-spacing) !important;
 }
 
 button {
@@ -204,6 +221,21 @@ button.solid:hover,
   color: var(--accent);
   font-weight: 500;
   transition: color 0.15s ease;
+}
+
+/* Force ZIP gate page text/input spacing */
+.zip-gate-main,
+.zip-gate-main *,
+.zip-gate-form input,
+.zip-gate-form button,
+.zip-gate-form label,
+.zip-gate-card h1,
+.zip-gate-card p {
+  letter-spacing: var(--global-letter-spacing) !important;
+}
+
+.zip-gate-form input::placeholder {
+  letter-spacing: var(--global-letter-spacing) !important;
 }
 
 .auth-actions .auth-link-btn:not(.solid):hover {
