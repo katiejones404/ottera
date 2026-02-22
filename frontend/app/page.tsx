@@ -1,41 +1,24 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import PortalShell from "./components/PortalShell";
 import PublicLanding from "./components/PublicLanding";
 import type { Account } from "./data/roles";
 import { clearSession, loadSession, type StoredSession } from "./lib/session";
 
-function getInitialPage(): string {
-  const requestedPage =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("page")
-      : "home";
-  if (
-    requestedPage === "home" ||
-    requestedPage === "resources" ||
-    requestedPage === "about"
-  ) {
-    return requestedPage;
-  }
-
-  return "home";
-}
-
 export default function Home() {
   const router = useRouter();
-  const [activePage] = useState(getInitialPage);
+  const searchParams = useSearchParams();
   const [sessionData, setSessionData] = useState<StoredSession | null>(() => loadSession());
   const session: Account | null = sessionData?.account ?? null;
   const defaultZip = sessionData?.zipCode ?? "";
-  const requestedPage =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("page")
-      : null;
+
+  // Read directly from URL on every render — no stale useState
+  const requestedPage = searchParams.get("page");
   const currentPage =
     requestedPage === "about" || requestedPage === "resources" || requestedPage === "home"
       ? requestedPage
-      : activePage;
+      : "home";
 
   const handleSignOut = () => {
     clearSession();
