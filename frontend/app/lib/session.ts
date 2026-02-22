@@ -1,7 +1,22 @@
 import type { AuthResponse } from "./api";
-import { ROLES, type Account, type Role } from "../data/roles";
 
 const SESSION_KEY = "ottera_auth_session";
+
+export const ROLES = {
+  ADMIN: "admin",
+  USER: "user",
+  VOLUNTEER: "volunteer",
+  DISTRIBUTOR: "distributor",
+} as const;
+
+export type Role = (typeof ROLES)[keyof typeof ROLES];
+
+export type Account = {
+  id: string;
+  name: string;
+  role: Role;
+  notifications: number;
+};
 
 export type StoredSession = {
   accessToken: string;

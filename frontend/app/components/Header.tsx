@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { Account } from "../data/roles";
+import type { Account } from "../lib/session";
 
 type HeaderProps = {
   activePage: string;

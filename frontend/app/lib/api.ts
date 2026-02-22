@@ -72,6 +72,9 @@ export type ResourceListing = {
     website?: string | null;
     approval_status?: string | null;
     focus_area?: string | null;
+    zip_codes?: string[] | null;
+    photo_urls?: string[] | null;
+    logo_url?: string | null;
   } | null;
 };
 
@@ -79,6 +82,7 @@ export async function fetchResourceListings(): Promise<ResourceListing[]> {
   const res = await fetch(`${API_BASE}/resources/listings`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
   });
 
   const data = await res.json();
@@ -151,8 +155,91 @@ export type ManagedNonprofit = {
   zip_codes: string[];
   addresses: Array<{ line1?: string; city?: string; state?: string; zip?: string }>;
   focus_area?: string | null;
+  photo_urls?: string[];
+  logo_url?: string | null;
   verified_usernames: string[];
 };
+
+export type NonprofitProfileListing = {
+  id: string;
+  title: string;
+  description: string;
+  category_slug: "pantry" | "closet" | "shelters";
+  location_label: string;
+  zip_codes: string[];
+  distribution_schedule?: string | null;
+  status: string;
+};
+
+export type NonprofitProfile = {
+  id: string;
+  name: string;
+  website?: string | null;
+  description?: string | null;
+  distribution_schedule?: string | null;
+  zip_codes: string[];
+  addresses: Array<{ line1?: string; city?: string; state?: string; zip?: string }>;
+  focus_area?: string | null;
+  photo_urls?: string[];
+  logo_url?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  verified_usernames: string[];
+  listings: NonprofitProfileListing[];
+};
+
+export async function fetchNonprofitProfile(nonprofitId: string): Promise<NonprofitProfile> {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/profile`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to load nonprofit profile");
+  return data?.data as NonprofitProfile;
+}
+
+export async function fetchNonprofitSubscriptionStatus(nonprofitId: string, accessToken: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/subscription`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to load subscription status");
+  return Boolean(data?.data?.subscribed);
+}
+
+export async function subscribeToNonprofit(nonprofitId: string, accessToken: string) {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/subscription`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to subscribe");
+  return data;
+}
+
+export async function unsubscribeFromNonprofit(nonprofitId: string, accessToken: string) {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/subscription`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to unsubscribe");
+  return data;
+}
 
 export async function fetchManagedNonprofits(accessToken: string): Promise<ManagedNonprofit[]> {
   const res = await fetch(`${API_BASE}/nonprofits/manage`, {
@@ -175,6 +262,8 @@ export async function updateManagedNonprofit(
     distribution_schedule?: string;
     zip_codes?: string[];
     addresses?: Array<{ line1?: string; city?: string; state?: string; zip?: string }>;
+    photo_urls?: string[];
+    logo_url?: string | null;
   },
   accessToken: string
 ): Promise<ManagedNonprofit> {
@@ -190,6 +279,25 @@ export async function updateManagedNonprofit(
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Failed to update nonprofit");
   return data?.data as ManagedNonprofit;
+}
+
+export async function uploadNonprofitMedia(
+  nonprofitId: string,
+  payload: { kind: "logo" | "photo"; slot?: number; data_url: string },
+  accessToken: string
+) {
+  const res = await fetch(`${API_BASE}/nonprofits/${nonprofitId}/media`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to upload nonprofit media");
+  return data;
 }
 
 export async function addVerifiedNonprofitUsername(

@@ -6,10 +6,9 @@ import {
   MAX_SEARCH_DISTANCE_MILES,
   MIN_SEARCH_DISTANCE_MILES,
   type ResourceCategory,
-  type ResourceListingRecord,
   buildCategoriesFromListings,
   getFilteredPosts,
-} from "../data/resources";
+} from "../lib/resourceMapping";
 import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
 import { fetchResourceListings } from "../lib/api";
 
@@ -34,7 +33,7 @@ export default function ResourceCategoryPage({
     fetchResourceListings()
       .then((rows) => {
         if (cancelled) return;
-        const categories = buildCategoriesFromListings(rows as ResourceListingRecord[]);
+        const categories = buildCategoriesFromListings(rows);
         const match = categories.find((item) => item.slug === category.slug);
         if (match) setPosts(match.posts);
       })
@@ -62,12 +61,21 @@ export default function ResourceCategoryPage({
     Promise.all(
       posts.map(async (post) => {
         const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
-        return [post.id, nearest ?? post.distanceMiles] as const;
+        if (typeof nearest === "number" && Number.isFinite(nearest)) {
+          return [post.id, nearest] as const;
+        }
+        if (post.zipcodes.includes(normalizedZip)) {
+          return [post.id, 0] as const;
+        }
+        return null;
       })
     )
       .then((entries) => {
         if (cancelled) return;
-        setResolvedDistances(Object.fromEntries(entries));
+        const validEntries = entries.filter(
+          (entry): entry is readonly [string, number] => Array.isArray(entry)
+        );
+        setResolvedDistances(Object.fromEntries(validEntries));
       })
       .catch(() => {
         if (!cancelled) setResolvedDistances({});
@@ -145,8 +153,31 @@ export default function ResourceCategoryPage({
 
       <section className="resource-results-grid" aria-label={`${category.title} results`}>
         {filteredPosts.map((post) => (
-          <article key={post.id} className="post-card detail-post-card">
-            <div className="post-image">{post.imageLabel}</div>
+          <article
+            key={post.id}
+            className={`post-card detail-post-card${post.nonprofitId ? " nonprofit-link-card" : ""}`}
+            role={post.nonprofitId ? "button" : undefined}
+            tabIndex={post.nonprofitId ? 0 : undefined}
+            onClick={() => {
+              if (!post.nonprofitId) return;
+              router.push(`/nonprofits/${post.nonprofitId}`);
+            }}
+            onKeyDown={(event) => {
+              if (!post.nonprofitId) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push(`/nonprofits/${post.nonprofitId}`);
+              }
+            }}
+            aria-label={post.nonprofitId ? `View nonprofit profile for ${post.title}` : undefined}
+          >
+            <div className="post-image">
+              {post.imageUrl ? (
+                <img src={post.imageUrl} alt={`${post.title} preview`} className="post-image-preview" />
+              ) : (
+                post.imageLabel
+              )}
+            </div>
             <h3>{post.title}</h3>
             <p>{post.description}</p>
             <p className="post-meta">{post.location}</p>

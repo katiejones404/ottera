@@ -6,8 +6,11 @@ export type ResourcePost = {
   description: string;
   location: string;
   imageLabel: string;
+  imageUrl?: string;
   distanceMiles: number;
   zipcodes: string[];
+  nonprofitId?: string | null;
+  nonprofitFocusArea?: string | null;
   previewGroup?: "pantry" | "distribution" | "clothing" | "other";
 };
 
@@ -40,6 +43,8 @@ export type ResourceListingRecord = {
     website?: string | null;
     approval_status?: string | null;
     focus_area?: string | null;
+    photo_urls?: string[] | null;
+    logo_url?: string | null;
   } | null;
 };
 
@@ -318,8 +323,11 @@ export function buildCategoriesFromListings(listings: ResourceListingRecord[]): 
           : listing.description,
       location: listing.location_label,
       imageLabel: categoryEmoji[cat],
+      imageUrl: listing.nonprofits?.photo_urls?.[0] || listing.nonprofits?.logo_url || undefined,
       distanceMiles: 25,
       zipcodes: Array.isArray(listing.zip_codes) ? listing.zip_codes : [],
+      nonprofitId: listing.nonprofit_id ?? null,
+      nonprofitFocusArea: normalizedFocusArea ?? null,
       previewGroup:
         normalizedFocusArea === "miscellaneous"
           ? "other"

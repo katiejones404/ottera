@@ -3,7 +3,7 @@ type ZipCoords = {
   lng: number;
 };
 
-const memoryCache = new Map<string, ZipCoords | null>();
+const memoryCache = new Map<string, ZipCoords>();
 
 const normalizeZip = (zip: string) => zip.trim().slice(0, 5);
 
@@ -14,6 +14,8 @@ const loadPersistentCache = () => {
     if (!raw) return;
     const parsed = JSON.parse(raw) as Record<string, ZipCoords | null>;
     for (const [zip, coords] of Object.entries(parsed)) {
+      if (!coords) continue;
+      if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) continue;
       memoryCache.set(zip, coords);
     }
   } catch {
@@ -24,7 +26,7 @@ const loadPersistentCache = () => {
 const savePersistentCache = () => {
   if (typeof window === "undefined") return;
   try {
-    const asObject: Record<string, ZipCoords | null> = {};
+    const asObject: Record<string, ZipCoords> = {};
     for (const [zip, coords] of memoryCache.entries()) {
       asObject[zip] = coords;
     }
@@ -43,14 +45,12 @@ export async function getZipCoords(zip: string): Promise<ZipCoords | null> {
   }
 
   if (memoryCache.has(normalized)) {
-    return memoryCache.get(normalized) ?? null;
+    return memoryCache.get(normalized) || null;
   }
 
   try {
     const response = await fetch(`https://api.zippopotam.us/us/${normalized}`);
     if (!response.ok) {
-      memoryCache.set(normalized, null);
-      savePersistentCache();
       return null;
     }
 
@@ -60,8 +60,6 @@ export async function getZipCoords(zip: string): Promise<ZipCoords | null> {
 
     const place = json.places?.[0];
     if (!place) {
-      memoryCache.set(normalized, null);
-      savePersistentCache();
       return null;
     }
 
@@ -71,8 +69,6 @@ export async function getZipCoords(zip: string): Promise<ZipCoords | null> {
     };
 
     if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
-      memoryCache.set(normalized, null);
-      savePersistentCache();
       return null;
     }
 
