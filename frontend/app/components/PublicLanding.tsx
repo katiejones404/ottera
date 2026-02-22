@@ -954,7 +954,11 @@ export default function PublicLanding({
 
             <div className="flex justify-center md:justify-end">
               <div className="w-80 h-80 bg-white/40 backdrop-blur-md rounded-full flex items-center justify-center shadow-[0_20px_60px_rgba(126,171,219,0.4)] border-4 border-white">
-                <div className="text-[#7eabdb] font-[Londrina_Solid] text-6xl">🦦</div>
+                <img
+                  src="/icons/logo1.png"
+                  alt="Ottera logo"
+                  className="w-80 h-80 object-contain"
+                />
               </div>
             </div>
           </div>
