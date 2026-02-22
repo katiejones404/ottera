@@ -6,9 +6,12 @@ import {
   MAX_SEARCH_DISTANCE_MILES,
   MIN_SEARCH_DISTANCE_MILES,
   RESOURCE_CATEGORIES,
+  type ResourceListingRecord,
+  buildCategoriesFromListings,
   getFilteredPosts,
 } from "../data/resources";
 import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
+import { fetchResourceListings } from "../lib/api";
 
 type PublicLandingProps = {
   activePage: string;
@@ -17,6 +20,45 @@ type PublicLandingProps = {
   isAuthenticated?: boolean;
   defaultZipcode?: string;
 };
+
+type PreviewSection = {
+  key: "pantry" | "distribution" | "miscellaneous" | "clothes";
+  title: string;
+  sectionDescription: string;
+  ctaLabel: string;
+  detailSlug: "pantry" | "shelters" | "closet" | null;
+};
+
+const PREVIEW_SECTIONS: PreviewSection[] = [
+  {
+    key: "pantry",
+    title: "Pantry",
+    sectionDescription: "Closest pantry resources near you.",
+    ctaLabel: "Explore all pantry resources",
+    detailSlug: "pantry",
+  },
+  {
+    key: "distribution",
+    title: "Distribution",
+    sectionDescription: "Closest food distribution and shelter options.",
+    ctaLabel: "Explore all distribution resources",
+    detailSlug: "shelters",
+  },
+  {
+    key: "clothes",
+    title: "Clothes",
+    sectionDescription: "Closest clothing and closet resources near you.",
+    ctaLabel: "Explore all clothing resources",
+    detailSlug: "closet",
+  },
+  {
+    key: "miscellaneous",
+    title: "Miscellaneous",
+    sectionDescription: "Closest miscellaneous support options from approved partners.",
+    ctaLabel: "More miscellaneous resources coming soon",
+    detailSlug: null,
+  },
+];
 
 export default function PublicLanding({
   activePage,
@@ -31,6 +73,7 @@ export default function PublicLanding({
   const [zipcode, setZipcode] = useState(defaultZipcode.trim().slice(0, 5));
   const [distanceLimit, setDistanceLimit] = useState<number>(25);
   const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
+  const [resourceCategories, setResourceCategories] = useState(RESOURCE_CATEGORIES);
 
   const goToResources = () => {
     if (onNavigate) onNavigate("resources");
@@ -42,10 +85,28 @@ export default function PublicLanding({
   };
 
   useEffect(() => {
+    if (activePage !== "resources") return
+    let cancelled = false
+    fetchResourceListings()
+      .then((rows) => {
+        if (cancelled) return
+        const mapped = buildCategoriesFromListings(rows as ResourceListingRecord[])
+        setResourceCategories(mapped)
+      })
+      .catch(() => {
+        setResourceCategories(RESOURCE_CATEGORIES)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activePage])
+
+  useEffect(() => {
     let cancelled = false;
     const normalizedZip = zipcode.trim().slice(0, 5);
     if (!/^\d{5}$/.test(normalizedZip)) return;
-    const allPosts = RESOURCE_CATEGORIES.flatMap((c) => c.posts);
+    const allPosts = resourceCategories.flatMap((c) => c.posts);
     Promise.all(
       allPosts.map(async (post) => {
         const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
@@ -56,19 +117,46 @@ export default function PublicLanding({
       setResolvedDistances(Object.fromEntries(entries));
     });
     return () => { cancelled = true; };
-  }, [zipcode]);
+  }, [zipcode, resourceCategories]);
 
   const hasValidZip = /^\d{5}$/.test(zipcode.trim().slice(0, 5));
 
   const rowsToDisplay = useMemo(() => {
     const distanceMap = hasValidZip ? resolvedDistances : {};
-    return RESOURCE_CATEGORIES.map((category) => ({
-      ...category,
-      visiblePosts: hasValidZip
-        ? getFilteredPosts(category.posts, zipcode, distanceLimit, distanceMap).slice(0, 3)
-        : [],
-    }));
-  }, [zipcode, distanceLimit, resolvedDistances, hasValidZip]);
+    const allPostsWithCategory = resourceCategories.flatMap((category) =>
+      category.posts.map((post) => ({ categorySlug: category.slug, post }))
+    );
+
+    return PREVIEW_SECTIONS.map((section) => {
+      const candidates = allPostsWithCategory
+        .filter(({ categorySlug, post }) => {
+          if (section.key === "pantry") {
+            return post.previewGroup === "pantry" || categorySlug === "pantry";
+          }
+          if (section.key === "distribution") {
+            return post.previewGroup === "distribution" || categorySlug === "shelters";
+          }
+          if (section.key === "miscellaneous") {
+            return post.previewGroup === "other";
+          }
+          return post.previewGroup === "clothing" || categorySlug === "closet";
+        })
+        .map(({ post }) => post);
+
+      return {
+        ...section,
+        slug: section.detailSlug,
+        visiblePosts: hasValidZip
+          ? getFilteredPosts(candidates, zipcode, distanceLimit, distanceMap).slice(0, 3)
+          : [],
+      };
+    });
+  }, [zipcode, distanceLimit, resolvedDistances, hasValidZip, resourceCategories]);
+
+  const sliderFillPercent =
+    ((distanceLimit - MIN_SEARCH_DISTANCE_MILES) /
+      (MAX_SEARCH_DISTANCE_MILES - MIN_SEARCH_DISTANCE_MILES)) *
+    100;
 
   /* ============ SHARED STYLES ============ */
   const styles = `
@@ -483,25 +571,53 @@ export default function PublicLanding({
       -webkit-appearance: none;
       appearance: none;
       width: 100%;
-      height: 4px;
-      border-radius: 4px;
+      height: 6px;
+      border-radius: 999px;
       background: var(--border);
+      padding: 0;
+      margin: 0;
       outline: none;
       cursor: pointer;
+      flex: 1;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 999px;
+      background: transparent;
     }
 
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: var(--clay);
+      border: 2px solid #fff;
+      box-shadow: 0 2px 8px rgba(42, 107, 156, 0.3);
+      cursor: pointer;
+      transition: transform 0.15s;
+      margin-top: -6px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+
+    input[type="range"]::-moz-range-track {
+      height: 6px;
+      border-radius: 999px;
+      background: transparent;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--clay);
+      border: 2px solid #fff;
       box-shadow: 0 2px 8px rgba(42, 107, 156, 0.3);
       cursor: pointer;
       transition: transform 0.15s;
     }
-
-    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
 
     /* Empty state */
     .empty-state {
@@ -626,6 +742,19 @@ export default function PublicLanding({
       padding: 3px 10px;
       font-weight: 500;
       font-size: 12px;
+    }
+
+    .closest-inline {
+      margin-top: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--clay-pale);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--muted-text);
     }
 
     /* ---- ABOUT PAGE ---- */
@@ -776,6 +905,9 @@ export default function PublicLanding({
                   step={1}
                   value={distanceLimit}
                   onChange={(e) => setDistanceLimit(Number(e.target.value))}
+                  style={{
+                    background: `linear-gradient(to right, var(--clay) 0%, var(--clay) ${sliderFillPercent}%, var(--border) ${sliderFillPercent}%, var(--border) 100%)`,
+                  }}
                 />
                 <span className="slider-value">{distanceLimit} mi</span>
               </div>
@@ -786,24 +918,34 @@ export default function PublicLanding({
             <div className="empty-state">
               <span className="empty-icon">📍</span>
               <p className="empty-title">Enter your ZIP code above</p>
-              <p className="empty-sub">We'll sort listings by distance and show what's closest to you.</p>
+              <p className="empty-sub">We&apos;ll sort listings by distance and show what&apos;s closest to you.</p>
             </div>
           ) : (
             <div>
               {rowsToDisplay.map((row) => (
-                <section key={row.slug} className="category-section">
+                <section key={row.key} className="category-section">
                   <div className="category-header">
                     <div>
                       <h2 className="category-title">{row.title}</h2>
                       <p className="category-desc">{row.sectionDescription}</p>
+                      {row.visiblePosts[0] && (
+                        <p className="closest-inline">
+                          Closest: {row.visiblePosts[0].title} (
+                          {(resolvedDistances[row.visiblePosts[0].id] ?? row.visiblePosts[0].distanceMiles).toFixed(1)} mi)
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
                       className={isAuthenticated ? "btn-primary" : "btn-ghost"}
-                      disabled={!isAuthenticated}
-                      style={!isAuthenticated ? { opacity: 0.55, cursor: "not-allowed" } : {}}
+                      disabled={!isAuthenticated || !row.slug}
+                      style={
+                        !isAuthenticated || !row.slug
+                          ? { opacity: 0.55, cursor: "not-allowed" }
+                          : {}
+                      }
                       onClick={() => {
-                        if (!isAuthenticated) return;
+                        if (!isAuthenticated || !row.slug) return;
                         router.push(`/resources/${row.slug}`);
                       }}
                     >

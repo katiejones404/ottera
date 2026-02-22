@@ -1,0 +1,1 @@
+These are some of the SQL queries we used in Supabase SQL Editor to create/alter tables.

@@ -6,9 +6,12 @@ import {
   MAX_SEARCH_DISTANCE_MILES,
   MIN_SEARCH_DISTANCE_MILES,
   type ResourceCategory,
+  type ResourceListingRecord,
+  buildCategoriesFromListings,
   getFilteredPosts,
 } from "../data/resources";
 import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
+import { fetchResourceListings } from "../lib/api";
 
 type ResourceCategoryPageProps = {
   category: ResourceCategory;
@@ -19,6 +22,25 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
   const [zipcode, setZipcode] = useState("");
   const [distanceLimit, setDistanceLimit] = useState<number>(25);
   const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
+  const [posts, setPosts] = useState(category.posts);
+
+  useEffect(() => {
+    let cancelled = false
+    fetchResourceListings()
+      .then((rows) => {
+        if (cancelled) return
+        const categories = buildCategoriesFromListings(rows as ResourceListingRecord[])
+        const match = categories.find((item) => item.slug === category.slug)
+        if (match) setPosts(match.posts)
+      })
+      .catch(() => {
+        // fallback to static demo posts
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [category.slug])
 
   useEffect(() => {
     let cancelled = false;
@@ -31,7 +53,7 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
     }
 
     Promise.all(
-      category.posts.map(async (post) => {
+      posts.map(async (post) => {
         const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
         return [post.id, nearest ?? post.distanceMiles] as const;
       })
@@ -43,12 +65,12 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
     return () => {
       cancelled = true;
     };
-  }, [zipcode, category.posts]);
+  }, [zipcode, posts]);
 
   const filteredPosts = useMemo(() => {
     const distanceMap = /^\d{5}$/.test(zipcode.trim().slice(0, 5)) ? resolvedDistances : {};
-    return getFilteredPosts(category.posts, zipcode, distanceLimit, distanceMap);
-  }, [category.posts, zipcode, distanceLimit, resolvedDistances]);
+    return getFilteredPosts(posts, zipcode, distanceLimit, distanceMap);
+  }, [posts, zipcode, distanceLimit, resolvedDistances]);
 
   const handleBack = () => {
     if (window.history.length > 1) {
