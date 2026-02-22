@@ -53,6 +53,6 @@ Ottera is a community-focused site where users facing financial hardship can fin
 
 **Package Manager**
 - npm
-
-  
-  
+## presntation slides 
+[  https://docs.google.com/presentation/d/1BMI8Vl7h5_Y262hQjE8IAJDZzhhjAIB34M3qMqVHGCE/edit?usp=sharing
+](url)
