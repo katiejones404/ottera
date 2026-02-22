@@ -1,93 +1,42 @@
-// frontend/app/page.tsx  (replace the file contents with this)
 "use client";
 
-import { useMemo, useState } from "react";
-import Header from "./components/Header";
-import PortalShell from "./components/PortalShell";
+import { useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
 import PublicLanding from "./components/PublicLanding";
-import AboutUs from "./components/AboutUs";
-import { MOCK_ACCOUNTS } from "./data/roles";
+import EventsCalendar from "./components/EventsCalendar";
+import { loadSession } from "./lib/session";
 
 export default function Home() {
-  const [activePage, setActivePage] = useState("home");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-
-  const session = useMemo(
-    () => MOCK_ACCOUNTS.find((account) => account.id === sessionId) ?? null,
-    [sessionId]
+  const router = useRouter();
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
   );
 
-  const cycleDemoSignIn = () => {
-    if (!sessionId) {
-      setSessionId(MOCK_ACCOUNTS[1].id);
-      return;
-    }
+  const sessionData = isHydrated ? loadSession() : null;
+  const session = sessionData?.account ?? null;
+  const defaultZip = sessionData?.zipCode ?? "";
 
-    const currentIndex = MOCK_ACCOUNTS.findIndex(
-      (account) => account.id === sessionId
-    );
-    const nextIndex = (currentIndex + 1) % MOCK_ACCOUNTS.length;
-    setSessionId(MOCK_ACCOUNTS[nextIndex].id);
-  };
+  const currentPage = "home";
 
   return (
     <div className="app-shell">
-      <Header
-        activePage={activePage}
-        onNavigate={setActivePage}
-        session={session}
-        onSignIn={cycleDemoSignIn}
-        onSignOut={() => setSessionId(null)}
-      />
-
       <main>
-        {session ? (
-          <PortalShell
-            session={session}
-            onReturnToLanding={() => setSessionId(null)}
-          />
-        ) : (
-          // Render pages based on activePage
-          <>
-            {activePage === "home" && (
-              <PublicLanding
-                onEnterPortal={cycleDemoSignIn}
-                onNavigate={(p: string) => setActivePage(p)}
-              />
-            )}
-
-            {activePage === "about" && (
-              <AboutUs
-                onEnterPortal={cycleDemoSignIn}
-                onNavigate={(p: string) => setActivePage(p)}
-              />
-            )}
-
-            {activePage === "resources" && (
-              // Small placeholder until you add the real Resources component.
-              // Replace this <section> with your Resources component import/render later.
-              <section className="resources-placeholder">
-                <h1>Find Resources</h1>
-                <p>
-                  This is a temporary placeholder for the Find Resources page.
-                  Hook up your real Resources component here (or replace this
-                  block with <code>&lt;Resources /&gt;</code> once it's ready).
-                </p>
-                <p>
-                  For now, click the button below to create an account (demo).
-                </p>
-                <div>
-                  <button className="btn btn-primary" onClick={cycleDemoSignIn}>
-                    Create account / Sign up (demo)
-                  </button>
-                </div>
-              </section>
-            )}
-          </>
-        )}
+        <PublicLanding
+          activePage={currentPage}
+          onEnterPortal={() => router.push(session ? "/resources" : "/resources/zipcode")}
+          onNavigate={(page) => {
+            if (page === "about") router.push("/aboutus");
+            if (page === "home") router.push("/");
+            if (page === "resources") router.push(session ? "/resources" : "/resources/zipcode");
+            if (page === "partner") router.push("/partner-with-us");
+          }}
+          isAuthenticated={Boolean(session)}
+          defaultZipcode={defaultZip}
+        />
+        <EventsCalendar />
       </main>
-
-      <footer className="footer">Ottera PearlHacks 2026 prototype</footer>
     </div>
   );
 }

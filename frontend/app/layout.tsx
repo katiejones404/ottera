@@ -1,32 +1,34 @@
+// app/layout.tsx
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
+import { Londrina_Solid } from "next/font/google";
 import "./globals.css";
+import AppNavbar from "./components/AppNavbar";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const londrina = Londrina_Solid({
+  weight: "400",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Ottera",
-  description: "Ottera PearlHacks 2026 prototype",
+  description: "Ottera PearlHacks 2026 Prototype",
+  icons: { icon: '/favicon.png' },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${londrina.className} antialiased`}>
+        <Suspense fallback={null}>
+          <AppNavbar />
+        </Suspense>
+
         {children}
       </body>
     </html>

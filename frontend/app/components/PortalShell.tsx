@@ -1,4 +1,4 @@
-import { ROLES, type Account } from "../data/roles";
+import { ROLES, type Account } from "../lib/session";
 
 const tabs = ["Events", "Find Help", "Profile/Settings"];
 

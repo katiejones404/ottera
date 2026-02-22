@@ -1,10 +1,14 @@
-import type { Account } from "../data/roles";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import type { Account } from "../lib/session";
+import ChatsPopup from "./ChatsPopup";
+import { loadSession } from "../lib/session";
 
 type HeaderProps = {
   activePage: string;
   onNavigate: (page: string) => void;
   session: Account | null;
-  onSignIn: () => void;
+  sessionRoles?: string[];
   onSignOut: () => void;
 };
 
@@ -12,14 +16,45 @@ export default function Header({
   activePage,
   onNavigate,
   session,
-  onSignIn,
+  sessionRoles = [],
   onSignOut,
 }: HeaderProps) {
+  const navRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState({ left: 0, width: 0 });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [chatsOpen, setChatsOpen] = useState(false);
+
+  const storedSession = typeof window !== "undefined" ? loadSession() : null;
+  const chatToken = storedSession?.accessToken ?? null;
+  const chatUserId = storedSession?.account?.id ?? null;
+  const chatUsername = storedSession?.username ?? null;
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const activeBtn = nav.querySelector<HTMLButtonElement>("button.active");
+    if (!activeBtn) return;
+    const navRect = nav.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    setIndicator({
+      left: btnRect.left - navRect.left,
+      width: btnRect.width,
+    });
+  }, [activePage]);
+
+  // Auto-open chats panel when Message Seller is clicked from the closet page
+  useEffect(() => {
+    const handler = () => setChatsOpen(true);
+    window.addEventListener("ottera:open_dm", handler);
+    return () => window.removeEventListener("ottera:open_dm", handler);
+  }, []);
+
   return (
     <header className="main-header">
       <button type="button" className="logo-wrap" onClick={() => onNavigate("home")}>
         <img
-          src="/logo.png"
+          src="/icons/logo1.png"
           alt="Ottera logo"
           className="logo"
           onError={(event) => {
@@ -29,46 +64,133 @@ export default function Header({
         <span className="brand">Ottera</span>
       </button>
 
-      <nav className="center-nav" aria-label="Primary navigation">
+      <nav ref={navRef} className="center-nav" aria-label="Primary navigation">
         <button
           type="button"
-          className={activePage === "home" ? "active" : ""}
+          className={`nav-tab ${activePage === "home" ? "active" : ""}`}
           onClick={() => onNavigate("home")}
         >
-          Home
+          <img
+            src="/icons/home.png"
+            alt="home icon"
+            className="nav-tab-icon"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span>Home</span>
         </button>
         <button
           type="button"
-          className={activePage === "resources" ? "active" : ""}
+          className={`nav-tab ${activePage === "resources" ? "active" : ""}`}
           onClick={() => onNavigate("resources")}
         >
-          Find Resources
+          <img
+            src="/icons/find.png"
+            alt="find resources icon"
+            className="nav-tab-icon"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span>Find Resources</span>
         </button>
         <button
           type="button"
-          className={activePage === "about" ? "active" : ""}
+          className={`nav-tab ${activePage === "about" ? "active" : ""}`}
           onClick={() => onNavigate("about")}
         >
-          About Us
+          <img
+            src="/icons/about.png"
+            alt="about us icon"
+            className="nav-tab-icon"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span>About Us</span>
         </button>
+        <button
+          type="button"
+          className={activePage === "partner" ? "active" : ""}
+          onClick={() => onNavigate("partner")}
+        >
+          Partner with Us
+        </button>
+
+        {/* sliding underline */}
+        <span
+          className="nav-indicator"
+          style={{ left: indicator.left, width: indicator.width }}
+        />
       </nav>
 
       <div className="auth-actions">
-        {session ? (
+        {session && chatToken && chatUserId && chatUsername && (
           <>
-            <span className="username">{session.name}</span>
-            <button type="button" onClick={onSignOut}>
-              Log out
+            <button
+              type="button"
+              className="chats-nav-btn"
+              onClick={() => setChatsOpen((o) => !o)}
+              aria-label="Open chats"
+            >
+              🔔 Chats
             </button>
+            {chatsOpen && (
+              <ChatsPopup
+                accessToken={chatToken}
+                userId={chatUserId}
+                username={chatUsername}
+                onClose={() => setChatsOpen(false)}
+              />
+            )}
           </>
+        )}
+        {session ? (
+          <div className="user-menu" ref={menuRef}>
+            <button
+              type="button"
+              className="username-btn"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              {session.name}
+            </button>
+            {menuOpen && (
+              <div className="user-dropdown">
+                <Link href="/portal" className="dropdown-link" onClick={() => setMenuOpen(false)}>
+                  User Portal
+                </Link>
+                {sessionRoles.includes("nonprofit_employee") && (
+                  <Link href="/nonprofit-portal" className="dropdown-link" onClick={() => setMenuOpen(false)}>
+                    Nonprofit Portal
+                  </Link>
+                )}
+                {sessionRoles.includes("admin") && (
+                  <Link href="/admin-portal" className="dropdown-link" onClick={() => setMenuOpen(false)}>
+                    Admin Portal
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onSignOut();
+                  }}
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <>
-            <button type="button" onClick={onSignIn}>
+            <Link href="/login" className="auth-link-btn">
               Log in
-            </button>
-            <button type="button" className="solid" onClick={onSignIn}>
+            </Link>
+            <Link href="/signup" className="solid auth-link-btn">
               Sign up
-            </button>
+            </Link>
           </>
         )}
       </div>
