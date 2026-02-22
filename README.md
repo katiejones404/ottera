@@ -1,5 +1,9 @@
+#Link to Website!
+https://ottera-rho.vercel.app/
+
 # Ottera🦦
-Ottera is a community-focused site where users facing financial hardship can find resources they need, such as food, clothing, shelter, and free community events happening in their city.
+Ottera is a community-focused site where users facing financial emergencies or hardship can find resources they need, such as food, clothing, shelter, and free community events happening in their city.
+We are bridging the gap between nonprofit clients and customers. Non-profits consistently have difficulty finding customers and communicating with them. Advertising is expensive, Facebook groups are hard to navigate, and people don't know where to look. Nonprofits can create channels to commmunicate with clients. Our application also allows for users to give away clothes for free to people in their commmunity, a process that is often hard to navigate.  
 
 ## Table of Contents
 - Features
@@ -27,6 +31,7 @@ Ottera is a community-focused site where users facing financial hardship can fin
   NEXT_PUBLIC_SUPABASE_URL=your-url-here
   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-key-here
 - Run the development Server
+- Insert SQL Queries (ask us for the Supabase layout)
    
 ## Usage
 - Sign up or log in to gain access to your profile
