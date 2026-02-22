@@ -1,3 +1,11 @@
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  DISTANCE_FILTERS,
+  RESOURCE_CATEGORIES,
+  getFilteredPosts,
+} from "../data/resources";
+
 type PublicLandingProps = {
   activePage: string;
   onEnterPortal: () => void;
@@ -7,6 +15,17 @@ export default function PublicLanding({
   activePage,
   onEnterPortal,
 }: PublicLandingProps) {
+  const router = useRouter();
+  const [zipcode, setZipcode] = useState("");
+  const [distanceLimit, setDistanceLimit] = useState<number>(10);
+
+  const rowsToDisplay = useMemo(() => {
+    return RESOURCE_CATEGORIES.map((category) => ({
+      ...category,
+      visiblePosts: getFilteredPosts(category.posts, zipcode, distanceLimit).slice(0, 3),
+    }));
+  }, [zipcode, distanceLimit]);
+
   if (activePage === "about") {
     return (
       <section className="panel">
@@ -22,31 +41,67 @@ export default function PublicLanding({
 
   if (activePage === "resources") {
     return (
-      <section className="panel">
-        <h1>Find Resources</h1>
-        <div className="card-grid">
-          <article className="card">
-            <h2>Food</h2>
-            <p>Search pantries and free meal events by city and day.</p>
-            <button type="button" className="solid" disabled>
-              Subscribe to Distributor (Log in required)
-            </button>
-          </article>
-          <article className="card">
-            <h2>Clothing</h2>
-            <p>Browse shelters and clothing closets accepting visitors this week.</p>
-            <button type="button" className="solid" disabled>
-              Message Clothing Shelter (Log in required)
-            </button>
-          </article>
-          <article className="card">
-            <h2>Shelter + Events</h2>
-            <p>View overnight shelter availability and free community events.</p>
-            <button type="button" className="solid" onClick={onEnterPortal}>
-              Create account to RSVP
-            </button>
-          </article>
+      <section className="resources-panel">
+        <h1 className="resources-title">Find Resources</h1>
+
+        <div className="zip-filter-wrap">
+          <label htmlFor="zip-filter" className="sr-only">
+            Enter your zipcode
+          </label>
+          <input
+            id="zip-filter"
+            type="text"
+            inputMode="numeric"
+            maxLength={5}
+            placeholder="Enter your zipcode"
+            value={zipcode}
+            onChange={(event) => {
+              const numericValue = event.target.value.replace(/\D/g, "").slice(0, 5);
+              setZipcode(numericValue);
+            }}
+          />
+
+          <div className="distance-filter-buttons" role="group" aria-label="Distance filter">
+            {DISTANCE_FILTERS.map((filter) => (
+              <button
+                key={filter.label}
+                type="button"
+                className={distanceLimit === filter.value ? "active" : ""}
+                onClick={() => setDistanceLimit(filter.value)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {rowsToDisplay.map((row) => (
+          <article key={row.slug} className="resource-row">
+            <div className="resource-row-header">
+              <h2>{row.title}</h2>
+              <p>{row.sectionDescription}</p>
+            </div>
+
+            <div className="resource-row-track" aria-label={`${row.title} posts`}>
+              {row.visiblePosts.map((post) => (
+                <article key={post.id} className="post-card">
+                  <div className="post-image">{post.imageLabel}</div>
+                  <h3>{post.title}</h3>
+                  <p>{post.description}</p>
+                  <p className="post-meta">{post.location}</p>
+                </article>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="solid resource-cta"
+              onClick={() => router.push(`/resources/${row.slug}`)}
+            >
+              {row.ctaLabel}
+            </button>
+          </article>
+        ))}
       </section>
     );
   }

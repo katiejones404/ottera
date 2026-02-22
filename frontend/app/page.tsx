@@ -6,8 +6,25 @@ import PortalShell from "./components/PortalShell";
 import PublicLanding from "./components/PublicLanding";
 import { MOCK_ACCOUNTS } from "./data/roles";
 
+function getInitialPage(): string {
+  if (typeof window === "undefined") {
+    return "home";
+  }
+
+  const requestedPage = new URLSearchParams(window.location.search).get("page");
+  if (
+    requestedPage === "home" ||
+    requestedPage === "resources" ||
+    requestedPage === "about"
+  ) {
+    return requestedPage;
+  }
+
+  return "home";
+}
+
 export default function Home() {
-  const [activePage, setActivePage] = useState("home");
+  const [activePage, setActivePage] = useState(getInitialPage);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const session = useMemo(
