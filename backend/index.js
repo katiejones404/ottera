@@ -489,6 +489,73 @@ app.post('/rsvp', async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+// ================= CHAT ROUTES =================
+
+// Start a new conversation between two users
+app.post('/chat/start', async (req, res) => {
+  const { user1_id, user2_id } = req.body
+
+  if (!user1_id || !user2_id) {
+    return res.status(400).json({ error: 'user1_id and user2_id required' })
+  }
+
+  try {
+    const { data: conversation, error } = await supabase
+      .from('conversations')
+      .insert([{}])
+      .select()
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    await supabase.from('conversation_participants').insert([
+      { conversation_id: conversation.id, user_id: user1_id },
+      { conversation_id: conversation.id, user_id: user2_id }
+    ])
+
+    res.status(201).json({ conversation_id: conversation.id })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Get messages
+app.get('/chat/:conversationId', async (req, res) => {
+  const { conversationId } = req.params
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select(`
+      id,
+      content,
+      created_at,
+      sender:profiles(first_name, last_name)
+    `)
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ data })
+})
+
+// Send message
+app.post('/chat/:conversationId', async (req, res) => {
+  const { conversationId } = req.params
+  const { sender_id, content } = req.body
+
+  if (!sender_id || !content) {
+    return res.status(400).json({ error: 'sender_id and content required' })
+  }
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert([{ conversation_id: conversationId, sender_id, content }])
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ data })
+})
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`)

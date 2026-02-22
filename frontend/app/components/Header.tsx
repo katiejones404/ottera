@@ -1,3 +1,5 @@
+'use client'
+
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Account } from "../data/roles";
@@ -19,6 +21,12 @@ export default function Header({
   const menuRef = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const nav = navRef.current;
@@ -35,7 +43,11 @@ export default function Header({
 
   return (
     <header className="main-header">
-      <button type="button" className="logo-wrap" onClick={() => onNavigate("home")}>
+      <button
+        type="button"
+        className="logo-wrap"
+        onClick={() => onNavigate("home")}
+      >
         <img
           src="/logo.png"
           alt="Ottera logo"
@@ -70,7 +82,6 @@ export default function Header({
           About Us
         </button>
 
-        {/* sliding underline */}
         <span
           className="nav-indicator"
           style={{ left: indicator.left, width: indicator.width }}
@@ -78,40 +89,42 @@ export default function Header({
       </nav>
 
       <div className="auth-actions">
-        {session ? (
-          <div className="user-menu" ref={menuRef}>
-            <button
-              type="button"
-              className="username-btn"
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              {session.name}
-            </button>
-            {menuOpen && (
-              <div className="user-dropdown">
-                <button
-                  type="button"
-                  className="dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onSignOut();
-                  }}
-                >
-                  Log out
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <Link href="/login" className="auth-link-btn">
-              Log in
-            </Link>
-            <Link href="/signup" className="solid auth-link-btn">
-              Sign up
-            </Link>
-          </>
-        )}
+        {mounted ? (
+          session ? (
+            <div className="user-menu" ref={menuRef}>
+              <button
+                type="button"
+                className="username-btn"
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                {session.name}
+              </button>
+              {menuOpen && (
+                <div className="user-dropdown">
+                  <button
+                    type="button"
+                    className="dropdown-item"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onSignOut();
+                    }}
+                  >
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <Link href="/login" className="auth-link-btn">
+                Log in
+              </Link>
+              <Link href="/signup" className="solid auth-link-btn">
+                Sign up
+              </Link>
+            </>
+          )
+        ) : null}
       </div>
     </header>
   );
