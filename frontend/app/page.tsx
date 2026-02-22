@@ -7,6 +7,23 @@ import PublicLanding from "./components/PublicLanding";
 import type { Account } from "./data/roles";
 import { clearSession, loadSession } from "./lib/session";
 
+function getInitialPage(): string {
+  if (typeof window === "undefined") {
+    return "home";
+  }
+
+  const requestedPage = new URLSearchParams(window.location.search).get("page");
+  if (
+    requestedPage === "home" ||
+    requestedPage === "resources" ||
+    requestedPage === "about"
+  ) {
+    return requestedPage;
+  }
+
+  return "home";
+}
+
 export default function Home() {
   const [activePage, setActivePage] = useState("home");
   const [session, setSession] = useState<Account | null>(
