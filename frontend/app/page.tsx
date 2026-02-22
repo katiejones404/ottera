@@ -1,10 +1,11 @@
 "use client";
-
-import { useMemo, useState } from "react";
+//.
+import { useState } from "react";
 import Header from "./components/Header";
 import PortalShell from "./components/PortalShell";
 import PublicLanding from "./components/PublicLanding";
-import { MOCK_ACCOUNTS } from "./data/roles";
+import type { Account } from "./data/roles";
+import { clearSession, loadSession } from "./lib/session";
 
 function getInitialPage(): string {
   if (typeof window === "undefined") {
@@ -24,25 +25,14 @@ function getInitialPage(): string {
 }
 
 export default function Home() {
-  const [activePage, setActivePage] = useState(getInitialPage);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-
-  const session = useMemo(
-    () => MOCK_ACCOUNTS.find((account) => account.id === sessionId) ?? null,
-    [sessionId]
+  const [activePage, setActivePage] = useState("home");
+  const [session, setSession] = useState<Account | null>(
+    () => loadSession()?.account ?? null
   );
 
-  const cycleDemoSignIn = () => {
-    if (!sessionId) {
-      setSessionId(MOCK_ACCOUNTS[1].id);
-      return;
-    }
-
-    const currentIndex = MOCK_ACCOUNTS.findIndex(
-      (account) => account.id === sessionId
-    );
-    const nextIndex = (currentIndex + 1) % MOCK_ACCOUNTS.length;
-    setSessionId(MOCK_ACCOUNTS[nextIndex].id);
+  const handleSignOut = () => {
+    clearSession();
+    setSession(null);
   };
 
   return (
@@ -51,20 +41,16 @@ export default function Home() {
         activePage={activePage}
         onNavigate={setActivePage}
         session={session}
-        onSignIn={cycleDemoSignIn}
-        onSignOut={() => setSessionId(null)}
+        onSignOut={handleSignOut}
       />
 
       <main>
         {session ? (
-          <PortalShell
-            session={session}
-            onReturnToLanding={() => setSessionId(null)}
-          />
+          <PortalShell session={session} onReturnToLanding={handleSignOut} />
         ) : (
           <PublicLanding
-            activePage={activePage}
-            onEnterPortal={cycleDemoSignIn}
+            onEnterPortal={() => setActivePage("resources")}
+            onNavigate={setActivePage}
           />
         )}
       </main>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   DISTANCE_FILTERS,
@@ -7,8 +7,8 @@ import {
 } from "../data/resources";
 
 type PublicLandingProps = {
-  activePage: string;
-  onEnterPortal: () => void;
+  onEnterPortal: () => void; // existing: opens portal / sign-up or navigates to portal
+  onNavigate?: (page: string) => void; // optional parent nav handler (e.g., "resources")
 };
 
 export default function PublicLanding({
@@ -103,24 +103,19 @@ export default function PublicLanding({
           </article>
         ))}
       </section>
-    );
-  }
 
-  return (
-    <section className="panel">
-      <p className="eyebrow">Community aid, simplified</p>
-      <h1>Find help fast. Share help locally.</h1>
-      <p>
-        Ottera helps community members discover food, clothing, shelter, and free
-        events in their city. Make an account to connect with volunteers and
-        distributors.
-      </p>
-      <div className="hero-actions">
-        <button type="button" className="solid" onClick={onEnterPortal}>
-          Find Resources
-        </button>
-        <button type="button">How It Works</button>
-      </div>
-    </section>
+      <section id="how-it-works" ref={howRef} className="how-it-works">
+        <h2>How Ottera Works</h2>
+        <ol>
+          <li><strong>Create an account:</strong> Sign up to find local resources, recieve message from organizations, or find volunteer options.</li>
+          <li><strong>Find resources:</strong> Browse food, clothing, shelter, and events by category and location.</li>
+          <li><strong>Organization updates:</strong> Nonprofits and shelters can announce openings and urgent needs.</li>
+        </ol>
+
+        <p className="how-cta">
+          <button className="btn btn-primary" onClick={goToResources}>Get started</button>
+        </p>
+      </section>
+    </main>
   );
 }
