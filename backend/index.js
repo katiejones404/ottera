@@ -3,6 +3,7 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const supabase = require('./lib/supabaseAdmin')
+const supabaseAuth = require('./lib/supabaseAuth')
 
 const app = express()
 app.use(cors())
@@ -19,6 +20,13 @@ const ALLOWED_ROLES = new Set([
 
 const ALLOWED_FOCUS_AREAS = new Set(['clothing', 'healthcare', 'shelter', 'food', 'other'])
 
+const getPrimaryRole = (roles = []) => {
+  if (roles.includes('nonprofit_employee')) return 'nonprofit_employee'
+  if (roles.includes('volunteer')) return 'volunteer'
+  if (roles.includes('clothes_donor')) return 'clothes_donor'
+  return 'person_in_need'
+}
+
 // Health
 app.get('/_health', (req, res) => res.json({ ok: true }))
 
@@ -29,6 +37,7 @@ app.get('/', (req, res) => {
     message: 'Ottera backend is running',
     routes: [
       'POST /auth/register',
+      'POST /auth/login',
       'POST /users/:userId/roles',
       'POST /nonprofits',
       'POST /nonprofits/:nonprofitId/employees',
@@ -48,6 +57,7 @@ app.post('/auth/register', async (req, res) => {
   const {
     first_name,
     last_name,
+    username,
     email,
     password,
     birthday = null,
@@ -56,8 +66,8 @@ app.post('/auth/register', async (req, res) => {
     roles = []
   } = req.body
 
-  if (!first_name || !last_name || !email || !password) {
-    return res.status(400).json({ error: 'missing required fields: first_name, last_name, email, password' })
+  if (!first_name || !last_name || !username || !email || !password) {
+    return res.status(400).json({ error: 'missing required fields: first_name, last_name, username, email, password' })
   }
 
   const normalizedRoles = Array.isArray(roles) ? [...new Set(roles)] : []
@@ -85,6 +95,7 @@ app.post('/auth/register', async (req, res) => {
         id: userId,
         first_name,
         last_name,
+        username,
         email,
         birthday,
         zip_code,
@@ -107,7 +118,79 @@ app.post('/auth/register', async (req, res) => {
       }
     }
 
-    return res.status(201).json({ user_id: userId, email, roles: normalizedRoles })
+    const { data: loginData, error: loginError } = await supabaseAuth.auth.signInWithPassword({
+      email,
+      password
+    })
+
+    if (loginError || !loginData?.session) {
+      return res.status(500).json({ error: loginError?.message || 'account created but auto login failed' })
+    }
+
+    return res.status(201).json({
+      user_id: userId,
+      first_name,
+      last_name,
+      username,
+      email,
+      roles: normalizedRoles,
+      primary_role: getPrimaryRole(normalizedRoles),
+      access_token: loginData.session.access_token,
+      refresh_token: loginData.session.refresh_token
+    })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Login using Supabase Auth and return tokens + profile
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'missing required fields: email, password' })
+  }
+
+  try {
+    const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({
+      email,
+      password
+    })
+
+    if (authError || !authData?.session || !authData?.user?.id) {
+      return res.status(401).json({ error: authError?.message || 'invalid login' })
+    }
+
+    const userId = authData.user.id
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('first_name, last_name, username, email')
+      .eq('id', userId)
+      .single()
+
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+
+    const { data: rolesData, error: rolesError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+
+    if (rolesError) {
+      return res.status(500).json({ error: rolesError.message })
+    }
+
+    const roles = (rolesData || []).map((row) => row.role)
+
+    return res.json({
+      user_id: userId,
+      ...profile,
+      roles,
+      primary_role: getPrimaryRole(roles),
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token
+    })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
@@ -119,6 +202,7 @@ app.post('/create-profile', async (req, res) => {
     id,
     first_name,
     last_name,
+    username = null,
     email,
     birthday = null,
     zip_code = null,
@@ -140,7 +224,7 @@ app.post('/create-profile', async (req, res) => {
     const { data, error } = await supabase
       .from('profiles')
       .upsert(
-        [{ id, first_name: parsedFirst, last_name: parsedLast, email, birthday, zip_code, phone }],
+        [{ id, first_name: parsedFirst, last_name: parsedLast, username, email, birthday, zip_code, phone }],
         { onConflict: 'id' }
       )
       .select('*')
@@ -374,8 +458,8 @@ app.post('/create-post', async (req, res) => {
       .eq('user_id', author_id)
       .maybeSingle()
 
-    if (profErr || !profile || !profile.is_org || profile.org_id !== org_id) {
-      return res.status(403).json({ error: 'not authorized as org admin' })
+    if (employeeErr || !employee) {
+      return res.status(403).json({ error: 'not authorized as nonprofit employee' })
     }
 
     const { data, error } = await supabase
