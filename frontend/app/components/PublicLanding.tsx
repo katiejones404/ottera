@@ -25,7 +25,7 @@ type PreviewSection = {
   title: string;
   sectionDescription: string;
   ctaLabel: string;
-  detailSlug: "pantry" | "shelters" | "closet" | null;
+  detailSlug: "pantry" | "shelters" | "closet" | "miscellaneous" | null;
 };
 
 const PREVIEW_SECTIONS: PreviewSection[] = [
@@ -54,8 +54,8 @@ const PREVIEW_SECTIONS: PreviewSection[] = [
     key: "miscellaneous",
     title: "Miscellaneous",
     sectionDescription: "Closest miscellaneous support options from approved partners.",
-    ctaLabel: "More miscellaneous resources coming soon",
-    detailSlug: null,
+    ctaLabel: "Explore all miscellaneous resources",
+    detailSlug: "miscellaneous",
   },
 ];
 

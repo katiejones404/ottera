@@ -1,6 +1,6 @@
 import type { ResourceListing } from "./api";
 
-export type ResourceCategorySlug = "pantry" | "closet" | "shelters";
+export type ResourceCategorySlug = "pantry" | "closet" | "shelters" | "miscellaneous";
 
 export type ResourcePost = {
   id: string;
@@ -50,6 +50,13 @@ const CATEGORY_META: Record<ResourceCategorySlug, Omit<ResourceCategory, "posts"
     detailDescription: "More shelters and support events close to your zipcode.",
     ctaLabel: "Explore more shelters",
   },
+  miscellaneous: {
+    slug: "miscellaneous",
+    title: "Miscellaneous",
+    sectionDescription: "Browse other community support resources near you.",
+    detailDescription: "More miscellaneous support resources from approved partners.",
+    ctaLabel: "Explore more miscellaneous resources",
+  },
 };
 
 export const RESOURCE_CATEGORY_META = CATEGORY_META;
@@ -58,15 +65,17 @@ const categoryEmoji: Record<ResourceCategorySlug, string> = {
   pantry: "\uD83C\uDF7D\uFE0F",
   closet: "\uD83D\uDC55",
   shelters: "\uD83C\uDFE0",
+  miscellaneous: "\u2728",
 };
 
-export const ALLOWED_RESOURCE_SLUGS: ResourceCategorySlug[] = ["pantry", "closet", "shelters"];
+export const ALLOWED_RESOURCE_SLUGS: ResourceCategorySlug[] = ["pantry", "closet", "shelters", "miscellaneous"];
 
 export function buildCategoriesFromListings(listings: ResourceListing[]): ResourceCategory[] {
   const grouped: Record<ResourceCategorySlug, ResourcePost[]> = {
     pantry: [],
     closet: [],
     shelters: [],
+    miscellaneous: [],
   };
 
   for (const listing of listings) {
@@ -74,7 +83,7 @@ export function buildCategoriesFromListings(listings: ResourceListing[]): Resour
       listing.nonprofits?.focus_area === "other" ? "miscellaneous" : listing.nonprofits?.focus_area;
 
     const cat: ResourceCategorySlug =
-      normalizedFocusArea === "miscellaneous" ? "closet" : listing.category_slug;
+      normalizedFocusArea === "miscellaneous" ? "miscellaneous" : listing.category_slug;
     if (!grouped[cat]) continue;
 
     grouped[cat].push({
@@ -97,7 +106,7 @@ export function buildCategoriesFromListings(listings: ResourceListing[]): Resour
       nonprofitId: listing.nonprofit_id ?? null,
       nonprofitFocusArea: normalizedFocusArea ?? null,
       previewGroup:
-        normalizedFocusArea === "miscellaneous"
+        cat === "miscellaneous"
           ? "other"
           : cat === "pantry"
             ? "pantry"

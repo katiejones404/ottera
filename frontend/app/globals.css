@@ -1835,6 +1835,73 @@ button.solid:hover,
   justify-content: center;
 }
 
+/* ── Message likes ─────────────────────────────────────────── */
+
+.chat-message-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 2px;
+}
+
+.chat-like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  color: var(--ink);
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+.chat-like-btn:hover { opacity: 1; background: var(--sand-deep); }
+.chat-like-btn.liked {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chat-like-count { font-weight: 600; }
+
+/* ── RSVP list (event creator view) ───────────────────────── */
+
+.event-rsvp-list {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 8px;
+}
+.event-rsvp-list-header {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.event-rsvp-names {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+}
+.event-rsvp-names li {
+  font-size: 0.82rem;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
 @media (max-width: 640px) {
   .chats-popup { right: 0.5rem; left: 0.5rem; width: auto; }
   .chats-list { width: 160px; min-width: 140px; }
