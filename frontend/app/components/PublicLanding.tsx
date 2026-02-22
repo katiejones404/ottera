@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MAX_SEARCH_DISTANCE_MILES,
@@ -68,7 +68,6 @@ export default function PublicLanding({
   defaultZipcode = "",
 }: PublicLandingProps) {
   const router = useRouter();
-  const howRef = useRef<HTMLElement | null>(null);
 
   const [zipcode, setZipcode] = useState(defaultZipcode.trim().slice(0, 5));
   const [distanceLimit, setDistanceLimit] = useState<number>(25);
@@ -81,31 +80,36 @@ export default function PublicLanding({
   };
 
   const scrollToHowItWorks = () => {
-    howRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const element = document.getElementById("how-it-works");
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   useEffect(() => {
-    if (activePage !== "resources") return
-    let cancelled = false
+    if (activePage !== "resources") return;
+    let cancelled = false;
+
     fetchResourceListings()
       .then((rows) => {
-        if (cancelled) return
-        const mapped = buildCategoriesFromListings(rows as ResourceListingRecord[])
-        setResourceCategories(mapped)
+        if (cancelled) return;
+        const mapped = buildCategoriesFromListings(rows as ResourceListingRecord[]);
+        setResourceCategories(mapped);
       })
       .catch(() => {
-        setResourceCategories(RESOURCE_CATEGORIES)
-      })
+        setResourceCategories(RESOURCE_CATEGORIES);
+      });
 
     return () => {
-      cancelled = true
-    }
-  }, [activePage])
+      cancelled = true;
+    };
+  }, [activePage]);
 
   useEffect(() => {
     let cancelled = false;
     const normalizedZip = zipcode.trim().slice(0, 5);
     if (!/^\d{5}$/.test(normalizedZip)) return;
+
     const allPosts = resourceCategories.flatMap((c) => c.posts);
     Promise.all(
       allPosts.map(async (post) => {
@@ -116,7 +120,10 @@ export default function PublicLanding({
       if (cancelled) return;
       setResolvedDistances(Object.fromEntries(entries));
     });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [zipcode, resourceCategories]);
 
   const hasValidZip = /^\d{5}$/.test(zipcode.trim().slice(0, 5));
@@ -158,7 +165,6 @@ export default function PublicLanding({
       (MAX_SEARCH_DISTANCE_MILES - MIN_SEARCH_DISTANCE_MILES)) *
     100;
 
-  /* ============ SHARED STYLES ============ */
   const styles = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
 
@@ -183,14 +189,12 @@ export default function PublicLanding({
 
     .ottera-root * { box-sizing: border-box; }
 
-    /* Typography */
     .display-serif {
       font-family: 'DM Serif Display', Georgia, serif;
       letter-spacing: -0.02em;
       line-height: 1.1;
     }
 
-    /* ---- HERO ---- */
     .hero-wrap {
       padding: 80px 24px 96px;
       max-width: 1200px;
@@ -231,7 +235,6 @@ export default function PublicLanding({
       background: var(--amber);
       animation: pulse 2s ease-in-out infinite;
     }
-  };
 
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
@@ -278,6 +281,7 @@ export default function PublicLanding({
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      text-decoration: none;
     }
 
     .btn-primary:hover {
@@ -297,6 +301,7 @@ export default function PublicLanding({
       font-family: 'DM Sans', sans-serif;
       cursor: pointer;
       transition: background 0.2s, border-color 0.2s, transform 0.15s;
+      text-decoration: none;
     }
 
     .btn-ghost:hover {
@@ -305,10 +310,7 @@ export default function PublicLanding({
       transform: translateY(-1px);
     }
 
-    /* Hero visual panel */
-    .hero-visual {
-      position: relative;
-    }
+    .hero-visual { position: relative; }
 
     .stat-stack {
       display: flex;
@@ -325,10 +327,7 @@ export default function PublicLanding({
       display: flex;
       align-items: center;
       gap: 20px;
-      transition: transform 0.2s;
     }
-
-    .stat-card:hover { transform: translateX(4px); }
 
     .stat-icon {
       width: 52px;
@@ -339,16 +338,12 @@ export default function PublicLanding({
       justify-content: center;
       font-size: 22px;
       flex-shrink: 0;
+      background: var(--clay-light);
     }
-
-    .stat-icon.green { background: var(--clay-light); }
-    .stat-icon.amber { background: var(--amber-light); }
-    .stat-icon.sage { background: #E4F0F7; }
 
     .stat-label { font-size: 13px; color: var(--muted-text); margin-bottom: 2px; }
     .stat-value { font-size: 22px; font-weight: 600; color: var(--ink); }
 
-    /* Floating accent */
     .float-tag {
       position: absolute;
       top: -16px;
@@ -363,7 +358,6 @@ export default function PublicLanding({
       white-space: nowrap;
     }
 
-    /* ---- TRUST BAR ---- */
     .trust-bar {
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
@@ -392,15 +386,6 @@ export default function PublicLanding({
 
     .trust-item strong { color: var(--ink); font-weight: 600; }
 
-    .trust-sep {
-      width: 1px;
-      height: 20px;
-      background: var(--border);
-    }
-
-    @media (max-width: 600px) { .trust-sep { display: none; } }
-
-    /* ---- HOW IT WORKS ---- */
     .how-section {
       padding: 80px 24px;
       max-width: 1200px;
@@ -437,12 +422,9 @@ export default function PublicLanding({
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 24px;
-      position: relative;
     }
 
-    @media (max-width: 700px) {
-      .steps-grid { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 700px) { .steps-grid { grid-template-columns: 1fr; } }
 
     .step-card {
       background: #fff;
@@ -450,12 +432,6 @@ export default function PublicLanding({
       border-radius: var(--radius-card);
       padding: 36px 28px;
       box-shadow: 0 4px 20px rgba(42, 107, 156, 0.05);
-      transition: box-shadow 0.25s, transform 0.25s;
-    }
-
-    .step-card:hover {
-      box-shadow: 0 12px 40px rgba(42, 107, 156, 0.1);
-      transform: translateY(-3px);
     }
 
     .step-num {
@@ -486,16 +462,13 @@ export default function PublicLanding({
       margin: 0;
     }
 
-    /* ---- RESOURCES PAGE ---- */
     .resources-wrap {
       max-width: 1200px;
       margin: 0 auto;
       padding: 56px 24px 80px;
     }
 
-    .page-header {
-      margin-bottom: 40px;
-    }
+    .page-header { margin-bottom: 40px; }
 
     .page-title {
       font-size: clamp(2rem, 3.5vw, 3rem);
@@ -544,6 +517,7 @@ export default function PublicLanding({
       background: var(--chalk);
       outline: none;
       transition: border-color 0.2s, box-shadow 0.2s;
+      margin-bottom: 12px;
     }
 
     .filter-input:focus {
@@ -582,12 +556,6 @@ export default function PublicLanding({
       flex: 1;
     }
 
-    input[type="range"]::-webkit-slider-runnable-track {
-      height: 6px;
-      border-radius: 999px;
-      background: transparent;
-    }
-
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
       width: 18px;
@@ -601,26 +569,6 @@ export default function PublicLanding({
       margin-top: -6px;
     }
 
-    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
-
-    input[type="range"]::-moz-range-track {
-      height: 6px;
-      border-radius: 999px;
-      background: transparent;
-    }
-
-    input[type="range"]::-moz-range-thumb {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: var(--clay);
-      border: 2px solid #fff;
-      box-shadow: 0 2px 8px rgba(42, 107, 156, 0.3);
-      cursor: pointer;
-      transition: transform 0.15s;
-    }
-
-    /* Empty state */
     .empty-state {
       text-align: center;
       padding: 80px 24px;
@@ -647,7 +595,6 @@ export default function PublicLanding({
       font-size: 0.95rem;
     }
 
-    /* Category section */
     .category-section {
       padding-top: 40px;
       margin-top: 40px;
@@ -690,14 +637,6 @@ export default function PublicLanding({
       border: 1px solid var(--border);
       border-radius: var(--radius-card);
       padding: 24px;
-      transition: box-shadow 0.25s, transform 0.25s, border-color 0.25s;
-      cursor: default;
-    }
-
-    .post-card:hover {
-      box-shadow: 0 12px 36px rgba(42, 107, 156, 0.1);
-      transform: translateY(-3px);
-      border-color: #9FCBE0;
     }
 
     .post-emoji-wrap {
@@ -758,7 +697,6 @@ export default function PublicLanding({
       color: var(--muted-text);
     }
 
-    /* ---- ABOUT PAGE ---- */
     .about-wrap {
       max-width: 760px;
       margin: 80px auto;
@@ -828,7 +766,6 @@ export default function PublicLanding({
     }
   `;
 
-  /* ================= ABOUT ================= */
   if (activePage === "about") {
     return (
       <div className="ottera-root">
@@ -839,8 +776,8 @@ export default function PublicLanding({
             <h1 className="display-serif about-title">About Ottera</h1>
             <p className="about-body">
               Ottera is a community message board where people facing financial hardship can find nearby help.
-              Nonprofits, shelters, volunteers, and distributors share trusted opportunities in one place —
-              making it easier than ever to connect those in need with the resources available in their community.
+              Nonprofits, shelters, volunteers, and distributors share trusted opportunities in one place,
+              making it easier than ever to connect those in need with available resources.
             </p>
             <p className="about-body" style={{ marginBottom: 0 }}>
               We believe access to basic necessities is a right, not a privilege. Ottera exists to reduce the
@@ -848,10 +785,10 @@ export default function PublicLanding({
             </p>
             <div className="about-features">
               {[
-                { icon: "🔍", label: "Easy Search", sub: "Find resources by ZIP code & distance" },
+                { icon: "🔍", label: "Easy Search", sub: "Find resources by ZIP code and distance" },
                 { icon: "📍", label: "Hyperlocal", sub: "Listings curated for your community" },
                 { icon: "🤝", label: "Community-powered", sub: "Posted by trusted organizations" },
-                { icon: "🔒", label: "Private & safe", sub: "No accounts required to browse" },
+                { icon: "🔒", label: "Private and safe", sub: "No account needed to browse" },
               ].map((f) => (
                 <div className="about-feature" key={f.label}>
                   <span className="about-feature-icon">{f.icon}</span>
@@ -868,7 +805,6 @@ export default function PublicLanding({
     );
   }
 
-  /* ================= RESOURCES ================= */
   if (activePage === "resources") {
     return (
       <div className="ottera-root">
@@ -882,21 +818,27 @@ export default function PublicLanding({
 
           <div className="filter-card">
             <div>
-              <h1 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-[72px] leading-tight">Ottera</h1>
-              <p className="text-[#7eabdb] mb-8 font-[Londrina_Solid] text-[32px] leading-relaxed">Keeping Communities Afloat</p>
-              
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Link
-                href="/resources/zipcode"
-                className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-8 py-4 rounded-full hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl inline-block text-center"
-                >
+              <label htmlFor="zip-filter" className="filter-label">Your ZIP code</label>
+              <input
+                id="zip-filter"
+                type="text"
+                inputMode="numeric"
+                maxLength={5}
+                placeholder="e.g. 27514"
+                value={zipcode}
+                onChange={(e) => setZipcode(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                className="filter-input"
+              />
+              <div className="hero-actions">
+                <button type="button" className="btn-primary" onClick={goToResources}>
                   Find Resources
-                  </Link>
-                <button 
-                  onClick={scrollToHowItWorks}
-                  className="bg-white/60 backdrop-blur-sm text-[#2d5f8d] px-8 py-4 rounded-full hover:bg-white/80 hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl border-2 border-white"
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => router.push("/")}
                 >
-                  How It Works
+                  Home
                 </button>
               </div>
             </div>
@@ -946,17 +888,13 @@ export default function PublicLanding({
                       type="button"
                       className={isAuthenticated ? "btn-primary" : "btn-ghost"}
                       disabled={!isAuthenticated || !row.slug}
-                      style={
-                        !isAuthenticated || !row.slug
-                          ? { opacity: 0.55, cursor: "not-allowed" }
-                          : {}
-                      }
+                      style={!isAuthenticated || !row.slug ? { opacity: 0.55, cursor: "not-allowed" } : {}}
                       onClick={() => {
                         if (!isAuthenticated || !row.slug) return;
                         router.push(`/resources/${row.slug}`);
                       }}
                     >
-                      {isAuthenticated ? row.ctaLabel : "Sign in to explore →"}
+                      {isAuthenticated ? row.ctaLabel : "Sign in to explore"}
                     </button>
                   </div>
 
@@ -980,119 +918,32 @@ export default function PublicLanding({
             </div>
           )}
         </div>
-        
-        {/* Wave divider */}
-        <div className="absolute bottom-0 left-0 w-full">
-          <svg viewBox="0 0 1200 120" preserveAspectRatio="none" className="w-full h-16 md:h-24">
-            <path d="M0,0 C150,80 350,80 600,50 C850,20 1050,50 1200,80 L1200,120 L0,120 Z" fill="#f1ede5"></path>
-          </svg>
-        </div>
-      </section>
-
-      {/* How It Works Section */}
-      <section id="how-it-works" className="py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-[56px]">How It Works</h2>
-            <p className="text-[#7eabdb] font-[Londrina_Solid] text-[24px]">Getting started is easy!</p>
-          </div>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-            {/* Step 1 */}
-            <div className="bg-white rounded-3xl p-8 shadow-lg hover:scale-105 transition-transform duration-300 border-4 border-[#c7e1ee]">
-              <div className="w-20 h-20 bg-gradient-to-br from-[#7eabdb] to-[#c7e1ee] rounded-full flex items-center justify-center mb-6 shadow-md">
-                <span className="text-white font-[Londrina_Solid] text-4xl">1</span>
-              </div>
-              <h3 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-3xl">Sign Up</h3>
-              <p className="text-[#2d5f8d] font-[Londrina_Solid] text-lg leading-relaxed">
-                Create your free account and tell us if you're seeking help, wanting to volunteer, or representing an organization.
-              </p>
-            </div>
-            
-            {/* Step 2 */}
-            <div className="bg-white rounded-3xl p-8 shadow-lg hover:scale-105 transition-transform duration-300 border-4 border-[#c7e1ee]">
-              <div className="w-20 h-20 bg-gradient-to-br from-[#7eabdb] to-[#c7e1ee] rounded-full flex items-center justify-center mb-6 shadow-md">
-                <span className="text-white font-[Londrina_Solid] text-4xl">2</span>
-              </div>
-              <h3 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-3xl">Connect</h3>
-              <p className="text-[#2d5f8d] font-[Londrina_Solid] text-lg leading-relaxed">
-                Browse local resources, find volunteer opportunities, or post what your community needs in real-time.
-              </p>
-            </div>
-            
-            {/* Step 3 */}
-            <div className="bg-white rounded-3xl p-8 shadow-lg hover:scale-105 transition-transform duration-300 border-4 border-[#c7e1ee]">
-              <div className="w-20 h-20 bg-gradient-to-br from-[#7eabdb] to-[#c7e1ee] rounded-full flex items-center justify-center mb-6 shadow-md">
-                <span className="text-white font-[Londrina_Solid] text-4xl">3</span>
-              </div>
-              <h3 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-3xl">Make Waves</h3>
-              <p className="text-[#2d5f8d] font-[Londrina_Solid] text-lg leading-relaxed">
-                Get the help you need or provide support to others. Together, we keep our communities afloat!
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 px-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#c7e1ee] via-[#7eabdb]/30 to-[#c7e1ee]"></div>
-        <div className="absolute top-20 left-20 w-40 h-40 bg-white/30 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-10 right-10 w-48 h-48 bg-[#7eabdb]/20 rounded-full blur-3xl"></div>
-        
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <div className="bg-white/60 backdrop-blur-md rounded-[2.5rem] p-12 shadow-[0_20px_60px_rgba(126,171,219,0.4)] border-4 border-white">
-            <h2 className="text-[#2d5f8d] mb-6 font-[Londrina_Solid] text-5xl">Ready to Dive In?</h2>
-            <p className="text-[#7eabdb] mb-10 leading-relaxed font-[Londrina_Solid] text-2xl">
-              Join Ottera today and be part of a community that cares! 🌊
-            </p>
-            <Link
-            href="/signup"
-            className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-10 py-5 rounded-full hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl inline-block text-center"
-            >
-              Get Started Now
-              </Link>
-          </div>
-        </div>
-      </section>
-    </div>
-  
-  
-  );
-}
-
-import Link from "next/link";
-export default function Home() {
-  const scrollToHowItWorks = () => {
-    const element = document.getElementById('how-it-works');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f1ede5]">
-      {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-[#c7e1ee] via-[#7eabdb]/40 to-[#c7e1ee] py-20 px-6 overflow-hidden min-h-[600px] flex items-center">
-        {/* Decorative circles */}
         <div className="absolute top-10 left-10 w-32 h-32 bg-white/30 rounded-full blur-2xl"></div>
         <div className="absolute bottom-20 right-20 w-40 h-40 bg-[#7eabdb]/20 rounded-full blur-3xl"></div>
-        
+
         <div className="max-w-7xl mx-auto w-full relative z-10">
           <div className="grid md:grid-cols-2 gap-12 items-center">
-            {/* Left side - Text and buttons */}
             <div>
               <h1 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-[72px] leading-tight">Ottera</h1>
               <p className="text-[#7eabdb] mb-8 font-[Londrina_Solid] text-[32px] leading-relaxed">Keeping Communities Afloat</p>
-              
+
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link
-                href="/resources/zipcode"
-                className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-8 py-4 rounded-full hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl inline-block text-center"
+                <button
+                  type="button"
+                  onClick={goToResources}
+                  className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-8 py-4 rounded-full hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl"
                 >
                   Find Resources
-                  </Link>
-                <button 
+                </button>
+                <button
+                  type="button"
                   onClick={scrollToHowItWorks}
                   className="bg-white/60 backdrop-blur-sm text-[#2d5f8d] px-8 py-4 rounded-full hover:bg-white/80 hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl border-2 border-white"
                 >
@@ -1100,8 +951,7 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            
-            {/* Right side - Logo circle */}
+
             <div className="flex justify-center md:justify-end">
               <div className="w-80 h-80 bg-white/40 backdrop-blur-md rounded-full flex items-center justify-center shadow-[0_20px_60px_rgba(126,171,219,0.4)] border-4 border-white">
                 <div className="text-[#7eabdb] font-[Londrina_Solid] text-6xl">🦦</div>
@@ -1109,8 +959,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-        
-        {/* Wave divider */}
+
         <div className="absolute bottom-0 left-0 w-full">
           <svg viewBox="0 0 1200 120" preserveAspectRatio="none" className="w-full h-16 md:h-24">
             <path d="M0,0 C150,80 350,80 600,50 C850,20 1050,50 1200,80 L1200,120 L0,120 Z" fill="#f1ede5"></path>
@@ -1118,27 +967,24 @@ export default function Home() {
         </div>
       </section>
 
-      {/* How It Works Section */}
       <section id="how-it-works" className="py-20 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-[56px]">How It Works</h2>
             <p className="text-[#7eabdb] font-[Londrina_Solid] text-[24px]">Getting started is easy!</p>
           </div>
-          
+
           <div className="grid md:grid-cols-3 gap-8">
-            {/* Step 1 */}
             <div className="bg-white rounded-3xl p-8 shadow-lg hover:scale-105 transition-transform duration-300 border-4 border-[#c7e1ee]">
               <div className="w-20 h-20 bg-gradient-to-br from-[#7eabdb] to-[#c7e1ee] rounded-full flex items-center justify-center mb-6 shadow-md">
                 <span className="text-white font-[Londrina_Solid] text-4xl">1</span>
               </div>
               <h3 className="text-[#2d5f8d] mb-4 font-[Londrina_Solid] text-3xl">Sign Up</h3>
               <p className="text-[#2d5f8d] font-[Londrina_Solid] text-lg leading-relaxed">
-                Create your free account and tell us if you're seeking help, wanting to volunteer, or representing an organization.
+                Create your free account and tell us if you&apos;re seeking help, wanting to volunteer, or representing an organization.
               </p>
             </div>
-            
-            {/* Step 2 */}
+
             <div className="bg-white rounded-3xl p-8 shadow-lg hover:scale-105 transition-transform duration-300 border-4 border-[#c7e1ee]">
               <div className="w-20 h-20 bg-gradient-to-br from-[#7eabdb] to-[#c7e1ee] rounded-full flex items-center justify-center mb-6 shadow-md">
                 <span className="text-white font-[Londrina_Solid] text-4xl">2</span>
@@ -1148,8 +994,7 @@ export default function Home() {
                 Browse local resources, find volunteer opportunities, or post what your community needs in real-time.
               </p>
             </div>
-            
-            {/* Step 3 */}
+
             <div className="bg-white rounded-3xl p-8 shadow-lg hover:scale-105 transition-transform duration-300 border-4 border-[#c7e1ee]">
               <div className="w-20 h-20 bg-gradient-to-br from-[#7eabdb] to-[#c7e1ee] rounded-full flex items-center justify-center mb-6 shadow-md">
                 <span className="text-white font-[Londrina_Solid] text-4xl">3</span>
@@ -1163,28 +1008,27 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA Section */}
       <section className="py-20 px-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#c7e1ee] via-[#7eabdb]/30 to-[#c7e1ee]"></div>
         <div className="absolute top-20 left-20 w-40 h-40 bg-white/30 rounded-full blur-3xl"></div>
         <div className="absolute bottom-10 right-10 w-48 h-48 bg-[#7eabdb]/20 rounded-full blur-3xl"></div>
-        
+
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <div className="bg-white/60 backdrop-blur-md rounded-[2.5rem] p-12 shadow-[0_20px_60px_rgba(126,171,219,0.4)] border-4 border-white">
             <h2 className="text-[#2d5f8d] mb-6 font-[Londrina_Solid] text-5xl">Ready to Dive In?</h2>
             <p className="text-[#7eabdb] mb-10 leading-relaxed font-[Londrina_Solid] text-2xl">
               Join Ottera today and be part of a community that cares! 🌊
             </p>
-            <Link
-            href="/signup"
-            className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-10 py-5 rounded-full hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl inline-block text-center"
+            <button
+              type="button"
+              onClick={() => router.push("/signup")}
+              className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-10 py-5 rounded-full hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid] text-xl"
             >
               Get Started Now
-              </Link>
+            </button>
           </div>
         </div>
       </section>
     </div>
   );
 }
-
