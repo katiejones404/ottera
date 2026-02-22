@@ -1,17 +1,66 @@
 // backend/index.js
 require('dotenv').config()
 const express = require('express')
+const http = require('http')
+const { Server: SocketServer } = require('socket.io')
 const cors = require('cors')
 const crypto = require('crypto')
 const supabase = require('./lib/supabaseAdmin')
 const supabaseAuth = require('./lib/supabaseAuth')
 
 const app = express()
-app.use(cors())
+const httpServer = http.createServer(app)
+
+const allowedOrigins = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ['http://localhost:3000', 'http://localhost:3001']
+
+app.use(cors({ origin: allowedOrigins, credentials: true }))
 app.use(express.json({ limit: '15mb' }))
+
+const io = new SocketServer(httpServer, {
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] }
+})
+
+// Socket.io: real-time messaging
+io.on('connection', (socket) => {
+  socket.on('join_conversations', (conversationIds) => {
+    if (Array.isArray(conversationIds)) {
+      conversationIds.forEach((id) => socket.join(`conversation:${id}`))
+    }
+  })
+
+  socket.on('leave_conversations', (conversationIds) => {
+    if (Array.isArray(conversationIds)) {
+      conversationIds.forEach((id) => socket.leave(`conversation:${id}`))
+    }
+  })
+
+  socket.on('send_message', async ({ conversationId, content, token, event_id = null }) => {
+    if (!conversationId || !content || !token) return
+    try {
+      const { data: userData } = await supabase.auth.getUser(token)
+      const userId = userData?.user?.id
+      if (!userId) return
+
+      const { data: profile } = await loadProfileByUserId(userId)
+      const senderUsername = profile?.username || 'user'
+
+      const { data: message, error } = await supabase
+        .from('messages')
+        .insert([{ conversation_id: conversationId, sender_id: userId, sender_username: senderUsername, content, event_id }])
+        .select('*')
+        .single()
+
+      if (error || !message) return
+      io.to(`conversation:${conversationId}`).emit('new_message', message)
+    } catch (e) {
+      console.error('send_message socket error:', e.message)
+    }
+  })
+})
 
 const PORT = process.env.PORT || 4000
 const NONPROFIT_MEDIA_BUCKET = process.env.SUPABASE_NONPROFIT_MEDIA_BUCKET || 'nonprofit-media'
+const CLOTHING_ITEMS_BUCKET = process.env.SUPABASE_CLOTHING_BUCKET || 'clothing-items'
 
 const ALLOWED_ROLES = new Set([
   'admin',
@@ -116,6 +165,26 @@ const uploadNonprofitMediaImage = async ({ nonprofitId, slotLabel, dataUrl }) =>
   if (uploadErr) return { publicUrl: null, error: uploadErr }
 
   const { data } = supabase.storage.from(NONPROFIT_MEDIA_BUCKET).getPublicUrl(path)
+  return { publicUrl: data?.publicUrl || null, error: null }
+}
+
+const uploadClothingImage = async ({ itemId, slot, dataUrl }) => {
+  const parsed = parseImageDataUrl(dataUrl)
+  if (!parsed) return { publicUrl: null, error: new Error('invalid image data URL') }
+
+  const filename = `${slot}-${Date.now()}-${crypto.randomUUID()}.${parsed.extension}`
+  const path = `items/${itemId}/${filename}`
+
+  const { error: uploadErr } = await supabase.storage
+    .from(CLOTHING_ITEMS_BUCKET)
+    .upload(path, parsed.buffer, {
+      upsert: true,
+      contentType: parsed.contentType,
+      cacheControl: '3600'
+    })
+  if (uploadErr) return { publicUrl: null, error: uploadErr }
+
+  const { data } = supabase.storage.from(CLOTHING_ITEMS_BUCKET).getPublicUrl(path)
   return { publicUrl: data?.publicUrl || null, error: null }
 }
 
@@ -916,6 +985,123 @@ app.post('/events', async (req, res) => {
   }
 })
 
+// Any logged-in user: submit an event for admin review
+app.post('/events/submit', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const {
+    title,
+    description,
+    location_label,
+    start_at,
+    end_at = null,
+    zip_codes = [],
+    website = null,
+    is_free = true
+  } = req.body
+
+  if (!title || !description || !location_label || !start_at) {
+    return res.status(400).json({ error: 'missing required fields: title, description, location_label, start_at' })
+  }
+
+  if (!Array.isArray(zip_codes)) {
+    return res.status(400).json({ error: 'zip_codes must be an array' })
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('community_events')
+      .insert([{
+        title,
+        description,
+        location_label,
+        start_at,
+        end_at,
+        zip_codes,
+        website,
+        is_free: Boolean(is_free),
+        status: 'pending',
+        posted_by_user_id: user.id
+      }])
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(201).json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: list pending events awaiting approval
+app.get('/events/pending', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  try {
+    const { data, error } = await supabase
+      .from('community_events')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || [] })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: approve a pending event (only if is_free)
+app.post('/events/:id/approve', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  const { id } = req.params
+  try {
+    const { data: evt, error: fetchErr } = await supabase
+      .from('community_events')
+      .select('id, is_free, status')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (fetchErr || !evt) return res.status(404).json({ error: 'event not found' })
+    if (!evt.is_free) return res.status(400).json({ error: 'only free events can be approved' })
+
+    const { data, error } = await supabase
+      .from('community_events')
+      .update({ status: 'active' })
+      .eq('id', id)
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: delete an event
+app.delete('/events/:id', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  const { id } = req.params
+  try {
+    const { error } = await supabase
+      .from('community_events')
+      .delete()
+      .eq('id', id)
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ ok: true })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
 // Register user in Supabase Auth + profile + optional roles
 app.post('/auth/register', async (req, res) => {
   const {
@@ -1094,7 +1280,7 @@ app.patch('/users/me/profile', async (req, res) => {
   }
 
   try {
-    if (normalizedEmail) {
+    if (normalizedEmail && normalizedEmail !== user.email) {
       const { error: authErr } = await supabase.auth.admin.updateUserById(user.id, { email: normalizedEmail })
       if (authErr) return res.status(500).json({ error: authErr.message })
     }
@@ -1388,6 +1574,47 @@ app.post('/nonprofits/:nonprofitId/admin-usernames', async (req, res) => {
       })
     if (upsertErr) return res.status(500).json({ error: upsertErr.message })
 
+    // Add the employee to the nonprofit's channel conversation so they can see and send messages
+    try {
+      const { data: employeeProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', normalizedUsername)
+        .maybeSingle()
+
+      if (employeeProfile?.id) {
+        let channelId = null
+        const { data: existingChannel } = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('type', 'channel')
+          .eq('nonprofit_id', nonprofitId)
+          .maybeSingle()
+
+        if (existingChannel) {
+          channelId = existingChannel.id
+        } else {
+          const { data: newChannel } = await supabase
+            .from('conversations')
+            .insert([{ type: 'channel', nonprofit_id: nonprofitId }])
+            .select('id')
+            .single()
+          channelId = newChannel?.id
+        }
+
+        if (channelId) {
+          await supabase
+            .from('conversation_participants')
+            .upsert([{ conversation_id: channelId, user_id: employeeProfile.id }], {
+              onConflict: 'conversation_id,user_id',
+              ignoreDuplicates: true
+            })
+        }
+      }
+    } catch (_) {
+      // Messaging tables may not exist yet — username add still succeeds
+    }
+
     return res.status(201).json({ ok: true, nonprofit_id: nonprofitId, username: normalizedUsername })
   } catch (e) {
     return res.status(500).json({ error: e.message })
@@ -1421,6 +1648,43 @@ app.delete('/nonprofits/:nonprofitId/admin-usernames/:username', async (req, res
       .eq('nonprofit_id', nonprofitId)
       .eq('username', username)
     if (deleteErr) return res.status(500).json({ error: deleteErr.message })
+
+    // Remove the employee from the channel conversation if they are not also a subscriber
+    try {
+      const { data: employeeProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle()
+
+      if (employeeProfile?.id) {
+        const { data: subscriberRow } = await supabase
+          .from('nonprofit_subscribers')
+          .select('user_id')
+          .eq('nonprofit_id', nonprofitId)
+          .eq('user_id', employeeProfile.id)
+          .maybeSingle()
+
+        if (!subscriberRow) {
+          const { data: channelRow } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('type', 'channel')
+            .eq('nonprofit_id', nonprofitId)
+            .maybeSingle()
+
+          if (channelRow) {
+            await supabase
+              .from('conversation_participants')
+              .delete()
+              .eq('conversation_id', channelRow.id)
+              .eq('user_id', employeeProfile.id)
+          }
+        }
+      }
+    } catch (_) {
+      // Messaging tables may not exist — removal still succeeds
+    }
 
     return res.json({ ok: true, nonprofit_id: nonprofitId, username })
   } catch (e) {
@@ -1664,6 +1928,40 @@ app.post('/nonprofits/:nonprofitId/subscription', async (req, res) => {
       })
 
     if (error) return res.status(500).json({ error: error.message })
+
+    // Also add the user to the nonprofit's channel conversation (graceful — don't fail if table missing)
+    try {
+      let channelId = null
+      const { data: existingChannel } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('type', 'channel')
+        .eq('nonprofit_id', nonprofitId)
+        .maybeSingle()
+
+      if (existingChannel) {
+        channelId = existingChannel.id
+      } else {
+        const { data: newChannel } = await supabase
+          .from('conversations')
+          .insert([{ type: 'channel', nonprofit_id: nonprofitId }])
+          .select('id')
+          .single()
+        channelId = newChannel?.id
+      }
+
+      if (channelId) {
+        await supabase
+          .from('conversation_participants')
+          .upsert([{ conversation_id: channelId, user_id: user.id }], {
+            onConflict: 'conversation_id,user_id',
+            ignoreDuplicates: true
+          })
+      }
+    } catch (_) {
+      // Messaging tables may not exist yet — subscription still succeeds
+    }
+
     return res.status(201).json({ ok: true, nonprofit_id: nonprofitId, user_id: user.id, subscribed: true })
   } catch (e) {
     return res.status(500).json({ error: e.message })
@@ -1823,6 +2121,491 @@ app.post('/rsvp', async (req, res) => {
   }
 })
 
-app.listen(PORT, () => {
+// ── Clothing Marketplace ─────────────────────────────────────
+
+// GET /clothing/items — all unsold items (public)
+app.get('/clothing/items', async (req, res) => {
+  const { category, size, zip_code } = req.query
+  try {
+    let query = supabase
+      .from('clothing_items')
+      .select('*')
+      .eq('is_sold', false)
+      .order('created_at', { ascending: false })
+
+    if (category) query = query.eq('category', category)
+    if (size) query = query.eq('size', size)
+    if (zip_code) query = query.eq('zip_code', zip_code)
+
+    const { data, error } = await query
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || [] })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /clothing/items — create item (auth required)
+app.post('/clothing/items', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { title, description, category, size, condition, photo_data_urls = [] } = req.body
+  if (!title) return res.status(400).json({ error: 'title is required' })
+
+  try {
+    const { data: profile } = await loadProfileByUserId(user.id)
+    const sellerUsername = profile?.username || null
+    if (!sellerUsername) {
+      return res.status(400).json({ error: 'You must set a username in your profile before listing items.' })
+    }
+
+    const sellerZip = profile?.zip_code || null
+
+    const { data: item, error: insertErr } = await supabase
+      .from('clothing_items')
+      .insert([{ seller_id: user.id, seller_username: sellerUsername, zip_code: sellerZip, title, description, category, size, condition, photo_urls: [] }])
+      .select('*')
+      .single()
+
+    if (insertErr || !item) return res.status(500).json({ error: insertErr?.message || 'failed to create item' })
+
+    const photoUrls = []
+    for (let i = 0; i < Math.min(photo_data_urls.length, 3); i++) {
+      const { publicUrl } = await uploadClothingImage({ itemId: item.id, slot: i, dataUrl: photo_data_urls[i] })
+      if (publicUrl) photoUrls.push(publicUrl)
+    }
+
+    if (photoUrls.length > 0) {
+      await supabase.from('clothing_items').update({ photo_urls: photoUrls }).eq('id', item.id)
+      item.photo_urls = photoUrls
+    }
+
+    return res.status(201).json({ data: item })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// PATCH /clothing/items/:id/sold — mark item as sold (seller only)
+app.patch('/clothing/items/:id/sold', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id } = req.params
+  try {
+    const { data: item, error: fetchErr } = await supabase
+      .from('clothing_items')
+      .select('seller_id')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (fetchErr || !item) return res.status(404).json({ error: 'item not found' })
+    if (item.seller_id !== user.id) return res.status(403).json({ error: 'not your listing' })
+
+    const { data: updated, error } = await supabase
+      .from('clothing_items')
+      .update({ is_sold: true, sold_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: updated })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// DELETE /clothing/items/:id — delete item (seller only)
+app.delete('/clothing/items/:id', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id } = req.params
+  try {
+    const { data: item, error: fetchErr } = await supabase
+      .from('clothing_items')
+      .select('seller_id')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (fetchErr || !item) return res.status(404).json({ error: 'item not found' })
+    if (item.seller_id !== user.id) return res.status(403).json({ error: 'not your listing' })
+
+    const { error } = await supabase.from('clothing_items').delete().eq('id', id)
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ ok: true })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /clothing/items/:id/like — toggle like (auth required)
+app.post('/clothing/items/:id/like', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id } = req.params
+  try {
+    const { data: existing } = await supabase
+      .from('item_likes')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .eq('item_id', id)
+      .maybeSingle()
+
+    if (existing) {
+      await supabase.from('item_likes').delete().eq('user_id', user.id).eq('item_id', id)
+      return res.json({ liked: false })
+    } else {
+      await supabase.from('item_likes').insert([{ user_id: user.id, item_id: id }])
+      return res.json({ liked: true })
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /clothing/items/:id/like-status — check if liked + count
+app.get('/clothing/items/:id/like-status', async (req, res) => {
+  const { id } = req.params
+  const token = getBearerToken(req)
+
+  try {
+    const { count } = await supabase.from('item_likes').select('*', { count: 'exact', head: true }).eq('item_id', id)
+
+    let liked = false
+    if (token) {
+      const { data: userData } = await supabase.auth.getUser(token)
+      if (userData?.user?.id) {
+        const { data: existing } = await supabase
+          .from('item_likes')
+          .select('user_id')
+          .eq('user_id', userData.user.id)
+          .eq('item_id', id)
+          .maybeSingle()
+        liked = Boolean(existing)
+      }
+    }
+
+    return res.json({ liked, count: count || 0 })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /clothing/my-items — seller's listings
+app.get('/clothing/my-items', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  try {
+    const { data, error } = await supabase
+      .from('clothing_items')
+      .select('*')
+      .eq('seller_id', user.id)
+      .order('created_at', { ascending: false })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || [] })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /clothing/my-likes — liked items
+app.get('/clothing/my-likes', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  try {
+    const { data, error } = await supabase
+      .from('item_likes')
+      .select('clothing_items(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+
+    if (error) return res.status(500).json({ error: error.message })
+    const items = (data || []).map((row) => row.clothing_items).filter(Boolean).filter((item) => !item.is_sold)
+    return res.json({ data: items })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// ── Conversations & Messaging ────────────────────────────────
+
+// GET /conversations — user's conversations with last message
+app.get('/conversations', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  try {
+    const { data: participations, error: partErr } = await supabase
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', user.id)
+
+    if (partErr) return res.status(500).json({ error: partErr.message })
+    const convIds = (participations || []).map((p) => p.conversation_id)
+    if (convIds.length === 0) return res.json({ data: [] })
+
+    const { data: convs, error: convErr } = await supabase
+      .from('conversations')
+      .select('id, type, nonprofit_id, created_at, nonprofits:nonprofit_id(id, name, logo_url)')
+      .in('id', convIds)
+      .order('created_at', { ascending: false })
+
+    if (convErr) return res.status(500).json({ error: convErr.message })
+
+    // Get last message and participant info for each conversation
+    const enriched = await Promise.all(
+      (convs || []).map(async (conv) => {
+        const { data: msgs } = await supabase
+          .from('messages')
+          .select('id, content, sender_username, created_at')
+          .eq('conversation_id', conv.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        const lastMessage = msgs?.[0] || null
+
+        // For DMs, get the other participant's username
+        let otherUsername = null
+        if (conv.type === 'dm') {
+          const { data: parts } = await supabase
+            .from('conversation_participants')
+            .select('user_id, profiles:user_id(username)')
+            .eq('conversation_id', conv.id)
+            .neq('user_id', user.id)
+            .limit(1)
+
+          otherUsername = parts?.[0]?.profiles?.username || null
+        }
+
+        return { ...conv, lastMessage, otherUsername }
+      })
+    )
+
+    return res.json({ data: enriched })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /conversations/dm — start or retrieve DM with username
+app.post('/conversations/dm', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { username } = req.body
+  if (!username) return res.status(400).json({ error: 'username is required' })
+
+  try {
+    // Find the other user by username
+    const { data: otherProfile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .eq('username', username)
+      .maybeSingle()
+
+    if (profileErr) return res.status(500).json({ error: profileErr.message })
+    if (!otherProfile) return res.status(404).json({ error: `user "${username}" not found` })
+    if (otherProfile.id === user.id) return res.status(400).json({ error: 'cannot message yourself' })
+
+    // Find existing DM between these two users
+    const { data: myConvs } = await supabase
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', user.id)
+
+    const myConvIds = (myConvs || []).map((p) => p.conversation_id)
+
+    if (myConvIds.length > 0) {
+      const { data: sharedConvs } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', otherProfile.id)
+        .in('conversation_id', myConvIds)
+
+      if (sharedConvs && sharedConvs.length > 0) {
+        // Verify it's a DM type
+        const { data: existingConv } = await supabase
+          .from('conversations')
+          .select('*')
+          .eq('id', sharedConvs[0].conversation_id)
+          .eq('type', 'dm')
+          .maybeSingle()
+
+        if (existingConv) return res.json({ data: existingConv, existing: true })
+      }
+    }
+
+    // Create new DM conversation
+    const { data: conv, error: convErr } = await supabase
+      .from('conversations')
+      .insert([{ type: 'dm' }])
+      .select('*')
+      .single()
+
+    if (convErr || !conv) return res.status(500).json({ error: convErr?.message || 'failed to create conversation' })
+
+    // Add both participants
+    await supabase.from('conversation_participants').insert([
+      { conversation_id: conv.id, user_id: user.id },
+      { conversation_id: conv.id, user_id: otherProfile.id }
+    ])
+
+    return res.status(201).json({ data: conv, existing: false, other_username: otherProfile.username })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /conversations/:id/messages — paginated messages
+app.get('/conversations/:id/messages', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id } = req.params
+  try {
+    // Verify user is a participant
+    const { data: participant } = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!participant) return res.status(403).json({ error: 'not a participant in this conversation' })
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', id)
+      .order('created_at', { ascending: true })
+      .limit(100)
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || [] })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /conversations/:id/messages — send a message (REST fallback)
+app.post('/conversations/:id/messages', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id } = req.params
+  const { content, event_id = null } = req.body
+  if (!content) return res.status(400).json({ error: 'content is required' })
+
+  try {
+    const { data: participant } = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!participant) return res.status(403).json({ error: 'not a participant in this conversation' })
+
+    const { data: profile } = await loadProfileByUserId(user.id)
+    const senderUsername = profile?.username || 'user'
+
+    const { data: message, error } = await supabase
+      .from('messages')
+      .insert([{ conversation_id: id, sender_id: user.id, sender_username: senderUsername, content, event_id }])
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    // Broadcast via socket to anyone connected
+    io.to(`conversation:${id}`).emit('new_message', message)
+
+    return res.status(201).json({ data: message })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /nonprofits/:nonprofitId/broadcast — nonprofit employee sends to all subscribers
+app.post('/nonprofits/:nonprofitId/broadcast', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  const { content, event_id = null } = req.body
+  if (!content) return res.status(400).json({ error: 'content is required' })
+
+  try {
+    const { data: profile } = await loadProfileByUserId(user.id)
+    const { allowed } = await canUserManageNonprofit({ nonprofitId, userId: user.id, username: profile?.username || null })
+    if (!allowed) return res.status(403).json({ error: 'not authorized to send to this channel' })
+
+    // Find or create channel conversation for this nonprofit
+    let channelConv = null
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('type', 'channel')
+      .eq('nonprofit_id', nonprofitId)
+      .maybeSingle()
+
+    if (existing) {
+      channelConv = existing
+    } else {
+      const { data: created } = await supabase
+        .from('conversations')
+        .insert([{ type: 'channel', nonprofit_id: nonprofitId }])
+        .select('id')
+        .single()
+      channelConv = created
+    }
+
+    if (!channelConv) return res.status(500).json({ error: 'failed to find channel conversation' })
+
+    const senderUsername = profile?.username || 'nonprofit'
+    const { data: message, error } = await supabase
+      .from('messages')
+      .insert([{ conversation_id: channelConv.id, sender_id: user.id, sender_username: senderUsername, content, event_id }])
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    io.to(`conversation:${channelConv.id}`).emit('new_message', message)
+
+    return res.status(201).json({ data: message, conversation_id: channelConv.id })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /nonprofits/:nonprofitId/channel — get nonprofit's channel conversation id
+app.get('/nonprofits/:nonprofitId/channel', async (req, res) => {
+  const { nonprofitId } = req.params
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('id, type, nonprofit_id')
+      .eq('type', 'channel')
+      .eq('nonprofit_id', nonprofitId)
+      .maybeSingle()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || null })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────
+
+httpServer.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`)
 })

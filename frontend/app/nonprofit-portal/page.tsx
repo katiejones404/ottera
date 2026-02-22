@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   addVerifiedNonprofitUsername,
+  broadcastToChannel,
   fetchManagedNonprofits,
   removeVerifiedNonprofitUsername,
   type ManagedNonprofit,
@@ -57,6 +58,8 @@ export default function NonprofitPortalPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [photoFiles, setPhotoFiles] = useState<Array<File | null>>([null, null, null, null]);
   const [newVerifiedUsername, setNewVerifiedUsername] = useState("");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcasting, setBroadcasting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +177,26 @@ export default function NonprofitPortalPage() {
       setSuccess("Verified username added.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add verified username.");
+    }
+  };
+
+  const onBroadcast = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session?.accessToken || !selectedNonprofit) return;
+    const message = broadcastMessage.trim();
+    if (!message) return;
+
+    setBroadcasting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await broadcastToChannel(selectedNonprofit.id, message, session.accessToken);
+      setBroadcastMessage("");
+      setSuccess("Message broadcast to all subscribers.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send broadcast.");
+    } finally {
+      setBroadcasting(false);
     }
   };
 
@@ -323,6 +346,23 @@ export default function NonprofitPortalPage() {
               ))}
               <button className="solid" type="submit" disabled={saving}>
                 {saving ? "Saving..." : "Save Nonprofit Settings"}
+              </button>
+            </form>
+
+            <h2>Broadcast to Subscribers</h2>
+            <p>Send a message to everyone subscribed to this nonprofit's channel.</p>
+            <form className="partner-form" onSubmit={onBroadcast}>
+              <label>
+                Message
+                <textarea
+                  required
+                  value={broadcastMessage}
+                  onChange={(event) => setBroadcastMessage(event.target.value)}
+                  placeholder="Write your announcement here..."
+                />
+              </label>
+              <button className="solid" type="submit" disabled={broadcasting}>
+                {broadcasting ? "Sending..." : "Send Broadcast"}
               </button>
             </form>
 

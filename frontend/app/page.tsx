@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import PublicLanding from "./components/PublicLanding";
+import EventsCalendar from "./components/EventsCalendar";
 import { loadSession } from "./lib/session";
 
 export default function Home() {
@@ -34,6 +35,7 @@ export default function Home() {
           isAuthenticated={Boolean(session)}
           defaultZipcode={defaultZip}
         />
+        <EventsCalendar />
       </main>
     </div>
   );

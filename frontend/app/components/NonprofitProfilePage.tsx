@@ -84,11 +84,11 @@ export default function NonprofitProfilePage({ nonprofitId }: NonprofitProfilePa
     setSuccess(null);
     try {
       if (subscribed) {
-        await unsubscribeFromNonprofit(nonprofit.id, session.accessToken);
+        await unsubscribeFromNonprofit(profile.id, session.accessToken);
         setSubscribed(false);
         setSuccess("You are unsubscribed from this channel.");
       } else {
-        await subscribeToNonprofit(nonprofit.id, session.accessToken);
+        await subscribeToNonprofit(profile.id, session.accessToken);
         setSubscribed(true);
         setSuccess("You are subscribed to this nonprofit channel.");
       }

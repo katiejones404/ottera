@@ -2,10 +2,13 @@
 
 import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
 import {
+  approveEvent,
   approvePartnerApplication,
   createEvent,
+  deleteEvent,
   denyPartnerApplication,
   fetchEvents,
+  fetchPendingEvents,
   fetchPartnerApplications,
   type CommunityEvent,
   type PartnerApplication,
@@ -24,6 +27,7 @@ export default function AdminPortalPage() {
 
   const [applications, setApplications] = useState<PartnerApplication[]>([]);
   const [events, setEvents] = useState<CommunityEvent[]>([]);
+  const [pendingEvents, setPendingEvents] = useState<CommunityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,9 +45,14 @@ export default function AdminPortalPage() {
     setLoading(true);
     setError(null);
     try {
-      const [apps, evts] = await Promise.all([fetchPartnerApplications(token), fetchEvents()]);
+      const [apps, evts, pending] = await Promise.all([
+        fetchPartnerApplications(token),
+        fetchEvents(),
+        fetchPendingEvents(token),
+      ]);
       setApplications(apps);
       setEvents(evts);
+      setPendingEvents(pending);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load admin portal data.");
     } finally {
@@ -71,6 +80,26 @@ export default function AdminPortalPage() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deny failed.");
+    }
+  };
+
+  const onApproveEvent = async (id: string) => {
+    setError(null);
+    try {
+      await approveEvent(id, token);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve event.");
+    }
+  };
+
+  const onDeleteEvent = async (id: string) => {
+    setError(null);
+    try {
+      await deleteEvent(id, token);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete event.");
     }
   };
 
@@ -176,6 +205,40 @@ export default function AdminPortalPage() {
           )}
         </div>
 
+        <h2>Pending Event Submissions</h2>
+        <div className="admin-list">
+          {pendingEvents.length === 0 ? (
+            <p className="muted-text">No pending event submissions.</p>
+          ) : (
+            pendingEvents.map((evt) => (
+              <article key={evt.id} className="admin-item">
+                <h3>{evt.title}</h3>
+                <p>{evt.description}</p>
+                <p className="muted-text">
+                  {evt.location_label} | {new Date(evt.start_at).toLocaleString()}
+                </p>
+                <p className="muted-text">
+                  {evt.is_free ? "Free event" : "Not free — cannot be approved"}
+                </p>
+                <div className="admin-actions">
+                  <button
+                    type="button"
+                    className="solid"
+                    onClick={() => onApproveEvent(evt.id)}
+                    disabled={!evt.is_free}
+                    title={!evt.is_free ? "Only free events can be approved" : undefined}
+                  >
+                    Approve
+                  </button>
+                  <button type="button" onClick={() => onDeleteEvent(evt.id)}>
+                    Deny
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+
         <h2>Create Current Event</h2>
         <form className="partner-form" onSubmit={onCreateEvent}>
           <label>
@@ -225,6 +288,11 @@ export default function AdminPortalPage() {
                 <p className="muted-text">
                   {evt.location_label} | {new Date(evt.start_at).toLocaleString()}
                 </p>
+                <div className="admin-actions">
+                  <button type="button" onClick={() => onDeleteEvent(evt.id)}>
+                    Delete
+                  </button>
+                </div>
               </article>
             ))
           )}
