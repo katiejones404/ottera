@@ -87,7 +87,7 @@ export default function AboutUs() {
           <div className="order-1 md:order-2">
             <h2 className="text-5xl text-[#2d5f8d] mb-6 font-[Londrina_Solid]">Our Mission</h2>
             <p className="text-lg mb-4 leading-relaxed font-[Londrina_Solid] text-[#2d5f8d]">
-              We're on a mission to make support easier to find, easier to coordinate, and easier to trust by
+              We&apos;re on a mission to make support easier to find, easier to coordinate, and easier to trust by
               connecting people in need, volunteers, and organizations through one centralized platform.
             </p>
           </div>
@@ -109,7 +109,7 @@ export default function AboutUs() {
           <div className="bg-white/60 backdrop-blur-md rounded-[2.5rem] p-12 shadow-[0_20px_60px_rgba(126,171,219,0.4)] border-4 border-white">
             <h2 className="text-5xl text-[#2d5f8d] mb-6 font-[Londrina_Solid]">Experience Ottera</h2>
             <p className="text-2xl text-[#7eabdb] mb-10 leading-relaxed font-[Londrina_Solid]">
-              Need support or want to help? Let's make waves together!
+              Need support or want to help? Let&apos;s make waves together!
             </p>
             <button className="bg-gradient-to-r from-[#7eabdb] to-[#2d5f8d] text-white px-10 py-5 rounded-full text-lg hover:shadow-xl hover:scale-105 transition-all duration-300 shadow-lg font-[Londrina_Solid]">
               Create an Account
