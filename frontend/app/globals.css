@@ -62,26 +62,6 @@ button.solid:hover,
   color: #fff;
 }
 
-/* Auth buttons */
-.auth-actions button.solid {
-  border-radius: 10px;
-  padding: 0.5rem 1.2rem;
-  font-weight: 600;
-}
-
-.auth-actions button:not(.solid) {
-  background: transparent;
-  border-color: transparent;
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.auth-actions button:not(.solid):hover {
-  background: transparent;
-  border-color: transparent;
-  color: var(--accent-strong);
-}
-
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -181,6 +161,8 @@ main {
   border-color: transparent;
 }
 
+/* ── Auth buttons ───────────────────────────────────── */
+
 .auth-actions {
   justify-self: end;
   display: inline-flex;
@@ -188,9 +170,46 @@ main {
   align-items: center;
 }
 
-.auth-actions button {
+.auth-actions button,
+.auth-actions .auth-link-btn {
   font-size: 0.875rem;
   padding: 0.4rem 1.1rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* "Log in" — blue text, no box */
+.auth-actions .auth-link-btn:not(.solid) {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--accent);
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.auth-actions .auth-link-btn:not(.solid):hover {
+  color: var(--accent-strong);
+  background: transparent;
+  border-color: transparent;
+}
+
+/* "Sign up" — filled blue rounded rectangle */
+.auth-actions .auth-link-btn.solid {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-weight: 600;
+  padding: 0.45rem 1.2rem;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.auth-actions .auth-link-btn.solid:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 4px 14px rgba(58, 143, 196, 0.35);
+  transform: translateY(-1px);
 }
 
 .username {
@@ -459,6 +478,7 @@ main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
 .signup-form label {
   display: grid;
   gap: 0.35rem;
@@ -517,31 +537,86 @@ main {
 }
 
 .zip-gate-card {
-  width: min(560px, 100%);
-  background: linear-gradient(180deg, #fffdf8 0%, #f7f0e2 100%);
+  width: min(520px, 100%);
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 1.5rem;
-  box-shadow: 0 18px 40px rgba(31, 47, 58, 0.1);
+  border-radius: 24px;
+  padding: 2.5rem;
+  box-shadow: 0 8px 32px rgba(42, 107, 156, 0.08);
+}
+
+.zip-gate-card .eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 10px;
+}
+
+.zip-gate-card h1 {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.zip-gate-card > p {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
 }
 
 .zip-gate-form {
   display: grid;
-  gap: 0.65rem;
-  margin-top: 0.7rem;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
 }
 
 .zip-gate-form label {
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 .zip-gate-form input {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.7rem 0.85rem;
-  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  background: #f8fafc;
   color: var(--ink);
   font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+}
+
+.zip-gate-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(58, 143, 196, 0.12);
+  background: #fff;
+}
+
+.zip-gate-form button[type="submit"] {
+  margin-top: 0.25rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.zip-gate-form button[type="submit"]:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 4px 14px rgba(58, 143, 196, 0.35);
+  transform: translateY(-1px);
 }
 
 .zip-empty-state {
@@ -700,4 +775,261 @@ main {
   .resource-results-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ─────────────────────────────────────────────
+   ZIP Gate Page
+───────────────────────────────────────────── */
+
+.zip-gate-main {
+  width: min(960px, 94vw);
+  min-height: calc(100vh - 5rem);
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.zip-gate-card {
+  width: min(520px, 100%);
+  background: #ffffffd9;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 2.5rem;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 32px rgba(36, 55, 70, 0.08);
+}
+
+.zip-gate-card .eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin: 0 0 10px;
+}
+
+.zip-gate-card h1 {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.zip-gate-card > p {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.zip-gate-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.zip-gate-form label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.zip-gate-form input {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.zip-gate-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(111, 182, 214, 0.25);
+}
+
+.zip-gate-form button[type="submit"] {
+  margin-top: 0.25rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(111, 182, 214, 0.25);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.zip-gate-form button[type="submit"]:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 6px 18px rgba(111, 182, 214, 0.35);
+  transform: translateY(-1px);
+}
+
+.form-error {
+  color: #9a2632;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* ─────────────────────────────────────────────
+   Auth Buttons
+───────────────────────────────────────────── */
+
+.auth-actions {
+  justify-self: end;
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.auth-actions .auth-link-btn {
+  font-size: 0.875rem;
+  padding: 0.4rem 1.1rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* "Log in" — blue text, no box */
+.auth-actions .auth-link-btn:not(.solid) {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.auth-actions .auth-link-btn:not(.solid):hover {
+  color: var(--accent);
+  background: transparent;
+}
+
+/* "Sign up" — filled blue rounded rectangle */
+.auth-actions .auth-link-btn.solid {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  padding: 0.45rem 1.2rem;
+  box-shadow: 0 4px 12px rgba(111, 182, 214, 0.25);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.auth-actions .auth-link-btn.solid:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 6px 18px rgba(111, 182, 214, 0.35);
+  transform: translateY(-1px);
+}
+
+/* ─────────────────────────────────────────────
+   Navbar extras (logo, indicator, user menu)
+───────────────────────────────────────────── */
+
+.logo-wrap {
+  justify-self: start;
+  border: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.logo-wrap:hover {
+  opacity: 0.8;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.nav-indicator {
+  position: absolute;
+  bottom: -2px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: left 0.25s ease, width 0.25s ease;
+  pointer-events: none;
+}
+
+.user-menu { position: relative; }
+
+.username-btn { font-weight: 600; }
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  min-width: 140px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(36, 55, 70, 0.1);
+  padding: 0.35rem;
+  z-index: 20;
+}
+
+.dropdown-item {
+  width: 100%;
+  border-radius: 10px;
+  text-align: left;
+}
+
+/* ─────────────────────────────────────────────
+   Auth link buttons (Log in / Sign up)
+───────────────────────────────────────────── */
+
+.auth-actions {
+  justify-self: end;
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.auth-link-btn {
+  font-size: 0.875rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 1.1rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--accent-strong);
+  font-weight: 500;
+  transition: color 0.2s ease;
+  cursor: pointer;
+}
+
+.auth-link-btn:hover {
+  color: var(--accent);
+}
+
+.auth-link-btn.solid {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 600;
+  padding: 0.45rem 1.2rem;
+  box-shadow: 0 4px 12px rgba(111, 182, 214, 0.25);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.auth-link-btn.solid:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 6px 18px rgba(111, 182, 214, 0.35);
+  transform: translateY(-1px);
+  color: #fff;
 }
