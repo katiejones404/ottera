@@ -133,6 +133,7 @@ app.post('/auth/register', async (req, res) => {
       last_name,
       username,
       email,
+      zip_code,
       roles: normalizedRoles,
       primary_role: getPrimaryRole(normalizedRoles),
       access_token: loginData.session.access_token,
@@ -164,7 +165,7 @@ app.post('/auth/login', async (req, res) => {
     const userId = authData.user.id
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('first_name, last_name, username, email')
+      .select('first_name, last_name, username, email, zip_code')
       .eq('id', userId)
       .single()
 

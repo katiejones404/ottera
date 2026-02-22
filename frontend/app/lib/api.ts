@@ -18,6 +18,7 @@ export type AuthResponse = {
   last_name: string;
   username: string;
   email: string;
+  zip_code?: string | null;
   roles: string[];
   primary_role: string;
   access_token: string;

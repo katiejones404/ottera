@@ -1,17 +1,16 @@
 "use client";
 import { useState } from "react";
-import Header from "./components/Header";
+import { useRouter } from "next/navigation";
 import PortalShell from "./components/PortalShell";
 import PublicLanding from "./components/PublicLanding";
 import type { Account } from "./data/roles";
-import { clearSession, loadSession } from "./lib/session";
+import { clearSession, loadSession, type StoredSession } from "./lib/session";
 
 function getInitialPage(): string {
-  if (typeof window === "undefined") {
-    return "home";
-  }
-
-  const requestedPage = new URLSearchParams(window.location.search).get("page");
+  const requestedPage =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("page")
+      : "home";
   if (
     requestedPage === "home" ||
     requestedPage === "resources" ||
@@ -24,33 +23,49 @@ function getInitialPage(): string {
 }
 
 export default function Home() {
-  const [activePage, setActivePage] = useState(getInitialPage);
-  const [session, setSession] = useState<Account | null>(
-    () => loadSession()?.account ?? null
-  );
+  const router = useRouter();
+  const [activePage] = useState(getInitialPage);
+  const [sessionData, setSessionData] = useState<StoredSession | null>(() => loadSession());
+  const session: Account | null = sessionData?.account ?? null;
+  const defaultZip = sessionData?.zipCode ?? "";
+  const requestedPage =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("page")
+      : null;
+  const currentPage =
+    requestedPage === "about" || requestedPage === "resources" || requestedPage === "home"
+      ? requestedPage
+      : activePage;
 
   const handleSignOut = () => {
     clearSession();
-    setSession(null);
+    setSessionData(null);
   };
 
   return (
     <div className="app-shell">
-      <Header
-        activePage={activePage}
-        onNavigate={setActivePage}
-        session={session}
-        onSignOut={handleSignOut}
-      />
-
       <main>
-        {session ? (
+        {currentPage === "resources" ? (
+          <PublicLanding
+            activePage="resources"
+            onEnterPortal={() => router.push(session ? "/resources" : "/resources/zipcode")}
+            onNavigate={() => router.push(session ? "/resources" : "/resources/zipcode")}
+            isAuthenticated={Boolean(session)}
+            defaultZipcode={defaultZip}
+          />
+        ) : session ? (
           <PortalShell session={session} onReturnToLanding={handleSignOut} />
         ) : (
           <PublicLanding
-            activePage={activePage}
-            onEnterPortal={() => setActivePage("resources")}
-            onNavigate={setActivePage}
+            activePage={currentPage}
+            onEnterPortal={() => router.push("/resources/zipcode")}
+            onNavigate={(page) => {
+              if (page === "about") router.push("/?page=about");
+              if (page === "home") router.push("/");
+              if (page === "resources") router.push("/resources/zipcode");
+            }}
+            isAuthenticated={false}
+            defaultZipcode=""
           />
         )}
       </main>

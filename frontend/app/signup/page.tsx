@@ -57,7 +57,7 @@ export default function SignupPage() {
       });
 
       saveSession(toStoredSession(result));
-      router.push("/");
+      router.push("/?page=resources");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {

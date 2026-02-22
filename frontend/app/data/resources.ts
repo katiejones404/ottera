@@ -1,10 +1,5 @@
 export type ResourceCategorySlug = "pantry" | "closet" | "shelters";
 
-export type DistanceOption = {
-  label: string;
-  value: number;
-};
-
 export type ResourcePost = {
   id: string;
   title: string;
@@ -24,11 +19,8 @@ export type ResourceCategory = {
   posts: ResourcePost[];
 };
 
-export const DISTANCE_FILTERS: DistanceOption[] = [
-  { label: "5 miles away", value: 5 },
-  { label: "10 miles away", value: 10 },
-  { label: "10+ miles away", value: Number.POSITIVE_INFINITY },
-];
+export const MIN_SEARCH_DISTANCE_MILES = 0;
+export const MAX_SEARCH_DISTANCE_MILES = 200;
 
 export const RESOURCE_CATEGORIES: ResourceCategory[] = [
   {
@@ -229,33 +221,21 @@ export function getResourceCategoryBySlug(slug: string): ResourceCategory | null
 export function getFilteredPosts(
   posts: ResourcePost[],
   zipcode: string,
-  maxDistance: number
+  maxDistance: number,
+  resolvedDistances: Record<string, number> = {}
 ): ResourcePost[] {
-  const normalizedZip = zipcode.trim();
+  const normalizedZip = zipcode.trim().slice(0, 5);
+  const boundedDistance = Math.max(MIN_SEARCH_DISTANCE_MILES, Math.min(MAX_SEARCH_DISTANCE_MILES, maxDistance));
 
-  const matchesDistance = (distance: number) => {
-    if (maxDistance === Number.POSITIVE_INFINITY) {
-      return distance > 10;
-    }
-
-    return distance <= maxDistance;
-  };
-
-  const filtered = posts.filter((post) => {
-    if (!matchesDistance(post.distanceMiles)) {
-      return false;
-    }
-
-    if (!normalizedZip) {
-      return true;
-    }
-
-    return post.zipcodes.includes(normalizedZip);
-  });
-
-  if (filtered.length > 0) {
-    return filtered;
-  }
-
-  return posts.filter((post) => matchesDistance(post.distanceMiles));
+  return posts
+    .map((post) => ({
+      post,
+      computedDistance:
+        normalizedZip.length === 5
+          ? (resolvedDistances[post.id] ?? post.distanceMiles)
+          : post.distanceMiles
+    }))
+    .filter(({ computedDistance }) => computedDistance <= boundedDistance)
+    .sort((a, b) => a.computedDistance - b.computedDistance)
+    .map(({ post }) => post);
 }
