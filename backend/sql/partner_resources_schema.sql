@@ -4,6 +4,8 @@ alter table public.nonprofits
   add column if not exists external_key text unique,
   add column if not exists description text,
   add column if not exists distribution_schedule text,
+  add column if not exists photo_urls text[] not null default '{}',
+  add column if not exists logo_url text,
   add column if not exists contact_email text,
   add column if not exists contact_phone text,
   add column if not exists approval_status text not null default 'approved',

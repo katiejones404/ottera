@@ -1,13 +1,13 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import PublicLanding from "./components/PublicLanding";
+import EventsCalendar from "./components/EventsCalendar";
 import { loadSession } from "./lib/session";
 
 export default function Home() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const isHydrated = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -18,8 +18,7 @@ export default function Home() {
   const session = sessionData?.account ?? null;
   const defaultZip = sessionData?.zipCode ?? "";
 
-  const requestedPage = searchParams.get("page");
-  const currentPage = requestedPage === "about" || requestedPage === "home" ? requestedPage : "home";
+  const currentPage = "home";
 
   return (
     <div className="app-shell">
@@ -36,6 +35,7 @@ export default function Home() {
           isAuthenticated={Boolean(session)}
           defaultZipcode={defaultZip}
         />
+        <EventsCalendar />
       </main>
     </div>
   );

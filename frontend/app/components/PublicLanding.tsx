@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   MAX_SEARCH_DISTANCE_MILES,
   MIN_SEARCH_DISTANCE_MILES,
-  RESOURCE_CATEGORIES,
-  type ResourceListingRecord,
   buildCategoriesFromListings,
   getFilteredPosts,
-} from "../data/resources";
+  type ResourceCategory,
+} from "../lib/resourceMapping";
 import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
 import { fetchResourceListings } from "../lib/api";
 
@@ -72,7 +71,7 @@ export default function PublicLanding({
   const [zipcode, setZipcode] = useState(defaultZipcode.trim().slice(0, 5));
   const [distanceLimit, setDistanceLimit] = useState<number>(25);
   const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
-  const [resourceCategories, setResourceCategories] = useState(RESOURCE_CATEGORIES);
+  const [resourceCategories, setResourceCategories] = useState<ResourceCategory[]>([]);
 
   const goToResources = () => {
     if (onNavigate) onNavigate("resources");
@@ -93,11 +92,11 @@ export default function PublicLanding({
     fetchResourceListings()
       .then((rows) => {
         if (cancelled) return;
-        const mapped = buildCategoriesFromListings(rows as ResourceListingRecord[]);
+        const mapped = buildCategoriesFromListings(rows);
         setResourceCategories(mapped);
       })
       .catch(() => {
-        setResourceCategories(RESOURCE_CATEGORIES);
+        setResourceCategories([]);
       });
 
     return () => {
@@ -114,11 +113,20 @@ export default function PublicLanding({
     Promise.all(
       allPosts.map(async (post) => {
         const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
-        return [post.id, nearest ?? post.distanceMiles] as const;
+        if (typeof nearest === "number" && Number.isFinite(nearest)) {
+          return [post.id, nearest] as const;
+        }
+        if (post.zipcodes.includes(normalizedZip)) {
+          return [post.id, 0] as const;
+        }
+        return null;
       })
     ).then((entries) => {
       if (cancelled) return;
-      setResolvedDistances(Object.fromEntries(entries));
+      const validEntries = entries.filter(
+        (entry): entry is readonly [string, number] => Array.isArray(entry)
+      );
+      setResolvedDistances(Object.fromEntries(validEntries));
     });
 
     return () => {
@@ -639,6 +647,17 @@ export default function PublicLanding({
       padding: 24px;
     }
 
+    .post-card.is-link {
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    }
+
+    .post-card.is-link:hover {
+      border-color: #9FCBE0;
+      box-shadow: 0 10px 28px rgba(42, 107, 156, 0.1);
+      transform: translateY(-2px);
+    }
+
     .post-emoji-wrap {
       width: 56px;
       height: 56px;
@@ -649,6 +668,14 @@ export default function PublicLanding({
       justify-content: center;
       font-size: 24px;
       margin-bottom: 16px;
+    }
+
+    .post-image-preview {
+      width: 100%;
+      height: 100%;
+      border-radius: 10px;
+      object-fit: cover;
+      display: block;
     }
 
     .post-title {
@@ -891,7 +918,9 @@ export default function PublicLanding({
                       style={!isAuthenticated || !row.slug ? { opacity: 0.55, cursor: "not-allowed" } : {}}
                       onClick={() => {
                         if (!isAuthenticated || !row.slug) return;
-                        router.push(`/resources/${row.slug}`);
+                        const normalizedZip = zipcode.trim().slice(0, 5);
+                        const zipQuery = /^\d{5}$/.test(normalizedZip) ? `?zip=${normalizedZip}` : "";
+                        router.push(`/resources/${row.slug}${zipQuery}`);
                       }}
                     >
                       {isAuthenticated ? row.ctaLabel : "Sign in to explore"}
@@ -900,8 +929,31 @@ export default function PublicLanding({
 
                   <div className="posts-grid">
                     {row.visiblePosts.map((post) => (
-                      <article key={post.id} className="post-card">
-                        <div className="post-emoji-wrap">{post.imageLabel}</div>
+                      <article
+                        key={post.id}
+                        className={`post-card${post.nonprofitId ? " is-link" : ""}`}
+                        role={post.nonprofitId ? "button" : undefined}
+                        tabIndex={post.nonprofitId ? 0 : undefined}
+                        onClick={() => {
+                          if (!post.nonprofitId) return;
+                          router.push(`/nonprofits/${post.nonprofitId}`);
+                        }}
+                        onKeyDown={(event) => {
+                          if (!post.nonprofitId) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(`/nonprofits/${post.nonprofitId}`);
+                          }
+                        }}
+                        aria-label={post.nonprofitId ? `View nonprofit profile for ${post.title}` : undefined}
+                      >
+                        <div className="post-emoji-wrap">
+                          {post.imageUrl ? (
+                            <img src={post.imageUrl} alt={`${post.title} preview`} className="post-image-preview" />
+                          ) : (
+                            post.imageLabel
+                          )}
+                        </div>
                         <h3 className="post-title">{post.title}</h3>
                         <p className="post-desc">{post.description}</p>
                         <div className="post-meta">

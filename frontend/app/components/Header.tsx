@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { Account } from "../data/roles";
+import type { Account } from "../lib/session";
+import ChatsPopup from "./ChatsPopup";
+import { loadSession } from "../lib/session";
 
 type HeaderProps = {
   activePage: string;
@@ -21,6 +23,12 @@ export default function Header({
   const menuRef = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [chatsOpen, setChatsOpen] = useState(false);
+
+  const storedSession = typeof window !== "undefined" ? loadSession() : null;
+  const chatToken = storedSession?.accessToken ?? null;
+  const chatUserId = storedSession?.account?.id ?? null;
+  const chatUsername = storedSession?.username ?? null;
 
   useEffect(() => {
     const nav = navRef.current;
@@ -34,6 +42,13 @@ export default function Header({
       width: btnRect.width,
     });
   }, [activePage]);
+
+  // Auto-open chats panel when Message Seller is clicked from the closet page
+  useEffect(() => {
+    const handler = () => setChatsOpen(true);
+    window.addEventListener("ottera:open_dm", handler);
+    return () => window.removeEventListener("ottera:open_dm", handler);
+  }, []);
 
   return (
     <header className="main-header">
@@ -111,6 +126,26 @@ export default function Header({
       </nav>
 
       <div className="auth-actions">
+        {session && chatToken && chatUserId && chatUsername && (
+          <>
+            <button
+              type="button"
+              className="chats-nav-btn"
+              onClick={() => setChatsOpen((o) => !o)}
+              aria-label="Open chats"
+            >
+              🔔 Chats
+            </button>
+            {chatsOpen && (
+              <ChatsPopup
+                accessToken={chatToken}
+                userId={chatUserId}
+                username={chatUsername}
+                onClose={() => setChatsOpen(false)}
+              />
+            )}
+          </>
+        )}
         {session ? (
           <div className="user-menu" ref={menuRef}>
             <button

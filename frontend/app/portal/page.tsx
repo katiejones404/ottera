@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { updateMyPassword, updateMyProfile } from "../lib/api";
+import { submitEvent, updateMyPassword, updateMyProfile } from "../lib/api";
 import { clearSession, loadSession, saveSession } from "../lib/session";
 
 export default function PortalPage() {
@@ -22,6 +22,15 @@ export default function PortalPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDescription, setEventDescription] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
+  const [eventStartAt, setEventStartAt] = useState("");
+  const [eventEndAt, setEventEndAt] = useState("");
+  const [eventZipCodesRaw, setEventZipCodesRaw] = useState("");
+  const [eventWebsite, setEventWebsite] = useState("");
+  const [eventIsFree, setEventIsFree] = useState(true);
+  const [submittingEvent, setSubmittingEvent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -94,6 +103,48 @@ export default function PortalPage() {
     }
   };
 
+  const onSubmitEvent = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session?.accessToken) return;
+
+    const zipCodes = eventZipCodesRaw
+      .split(",")
+      .map((z) => z.replace(/\D/g, "").slice(0, 5))
+      .filter((z) => z.length === 5);
+
+    setSubmittingEvent(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await submitEvent(
+        {
+          title: eventTitle.trim(),
+          description: eventDescription.trim(),
+          location_label: eventLocation.trim(),
+          start_at: new Date(eventStartAt).toISOString(),
+          end_at: eventEndAt ? new Date(eventEndAt).toISOString() : undefined,
+          zip_codes: zipCodes,
+          website: eventWebsite.trim() || undefined,
+          is_free: eventIsFree,
+        },
+        session.accessToken
+      );
+      setEventTitle("");
+      setEventDescription("");
+      setEventLocation("");
+      setEventStartAt("");
+      setEventEndAt("");
+      setEventZipCodesRaw("");
+      setEventWebsite("");
+      setEventIsFree(true);
+      setSuccess("Event submitted for admin review.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit event.");
+    } finally {
+      setSubmittingEvent(false);
+    }
+  };
+
   const onLogout = () => {
     clearSession();
     router.push("/login");
@@ -161,6 +212,55 @@ export default function PortalPage() {
           </label>
           <button className="solid" type="submit" disabled={savingProfile}>
             {savingProfile ? "Saving..." : "Save Settings"}
+          </button>
+        </form>
+
+        <h2>Submit a Community Event</h2>
+        <p>Free events will be reviewed by an admin before appearing publicly.</p>
+        <form className="partner-form" onSubmit={onSubmitEvent}>
+          <label>
+            Event Title
+            <input required value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} />
+          </label>
+          <label>
+            Description
+            <textarea required value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} />
+          </label>
+          <label>
+            Location
+            <input required value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} />
+          </label>
+          <div className="partner-row">
+            <label>
+              Start Time
+              <input type="datetime-local" required value={eventStartAt} onChange={(e) => setEventStartAt(e.target.value)} />
+            </label>
+            <label>
+              End Time
+              <input type="datetime-local" value={eventEndAt} onChange={(e) => setEventEndAt(e.target.value)} />
+            </label>
+          </div>
+          <label>
+            ZIP Codes (comma-separated)
+            <input value={eventZipCodesRaw} onChange={(e) => setEventZipCodesRaw(e.target.value)} />
+          </label>
+          <label>
+            Website URL
+            <input type="url" value={eventWebsite} onChange={(e) => setEventWebsite(e.target.value)} />
+          </label>
+          <label style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={eventIsFree}
+              onChange={(e) => setEventIsFree(e.target.checked)}
+            />
+            This event is free to attend
+          </label>
+          {!eventIsFree && (
+            <p className="form-error">Only free events can be approved by admins.</p>
+          )}
+          <button className="solid" type="submit" disabled={submittingEvent}>
+            {submittingEvent ? "Submitting..." : "Submit Event"}
           </button>
         </form>
 

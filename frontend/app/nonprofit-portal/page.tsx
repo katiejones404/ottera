@@ -4,9 +4,11 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   addVerifiedNonprofitUsername,
+  broadcastToChannel,
   fetchManagedNonprofits,
   removeVerifiedNonprofitUsername,
   type ManagedNonprofit,
+  uploadNonprofitMedia,
   updateManagedNonprofit,
 } from "../lib/api";
 import { loadSession } from "../lib/session";
@@ -28,6 +30,15 @@ function parseAddresses(raw: string) {
     });
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function NonprofitPortalPage() {
   const isHydrated = useSyncExternalStore(
     () => () => {},
@@ -44,7 +55,11 @@ export default function NonprofitPortalPage() {
   const [meetingTimes, setMeetingTimes] = useState("");
   const [zipCodesRaw, setZipCodesRaw] = useState("");
   const [addressesRaw, setAddressesRaw] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<Array<File | null>>([null, null, null, null]);
   const [newVerifiedUsername, setNewVerifiedUsername] = useState("");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcasting, setBroadcasting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +76,8 @@ export default function NonprofitPortalPage() {
     setMeetingTimes(nonprofit.distribution_schedule || "");
     setZipCodesRaw((nonprofit.zip_codes || []).join(", "));
     setAddressesRaw(formatAddressesForInput(nonprofit.addresses));
+    setLogoFile(null);
+    setPhotoFiles([null, null, null, null]);
   };
 
   const loadData = async () => {
@@ -114,9 +131,30 @@ export default function NonprofitPortalPage() {
         session.accessToken
       );
 
+      if (logoFile) {
+        const logoDataUrl = await fileToDataUrl(logoFile);
+        await uploadNonprofitMedia(
+          selectedNonprofit.id,
+          { kind: "logo", data_url: logoDataUrl },
+          session.accessToken
+        );
+      }
+
+      for (let slot = 0; slot < photoFiles.length; slot += 1) {
+        const file = photoFiles[slot];
+        if (!file) continue;
+        const photoDataUrl = await fileToDataUrl(file);
+        await uploadNonprofitMedia(
+          selectedNonprofit.id,
+          { kind: "photo", slot, data_url: photoDataUrl },
+          session.accessToken
+        );
+      }
+
       setNonprofits((current) =>
         current.map((row) => (row.id === updated.id ? updated : row))
       );
+      await loadData();
       setSuccess("Nonprofit settings updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update nonprofit settings.");
@@ -139,6 +177,26 @@ export default function NonprofitPortalPage() {
       setSuccess("Verified username added.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add verified username.");
+    }
+  };
+
+  const onBroadcast = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session?.accessToken || !selectedNonprofit) return;
+    const message = broadcastMessage.trim();
+    if (!message) return;
+
+    setBroadcasting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await broadcastToChannel(selectedNonprofit.id, message, session.accessToken);
+      setBroadcastMessage("");
+      setSuccess("Message broadcast to all subscribers.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send broadcast.");
+    } finally {
+      setBroadcasting(false);
     }
   };
 
@@ -252,8 +310,59 @@ export default function NonprofitPortalPage() {
                   placeholder="120 Harbor St, Raleigh, NC, 27601"
                 />
               </label>
+              <label>
+                Logo Photo
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null;
+                    setLogoFile(file);
+                  }}
+                />
+                {!logoFile && selectedNonprofit?.logo_url ? (
+                  <span className="muted-text">Current: logo already uploaded.</span>
+                ) : null}
+              </label>
+              {[0, 1, 2, 3].map((slot) => (
+                <label key={`photo-slot-${slot}`}>
+                  Photo {slot + 1}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setPhotoFiles((current) => {
+                        const next = [...current];
+                        next[slot] = file;
+                        return next;
+                      });
+                    }}
+                  />
+                  {!photoFiles[slot] && selectedNonprofit?.photo_urls?.[slot] ? (
+                    <span className="muted-text">Current: photo {slot + 1} already uploaded.</span>
+                  ) : null}
+                </label>
+              ))}
               <button className="solid" type="submit" disabled={saving}>
                 {saving ? "Saving..." : "Save Nonprofit Settings"}
+              </button>
+            </form>
+
+            <h2>Broadcast to Subscribers</h2>
+            <p>Send a message to everyone subscribed to this nonprofit's channel.</p>
+            <form className="partner-form" onSubmit={onBroadcast}>
+              <label>
+                Message
+                <textarea
+                  required
+                  value={broadcastMessage}
+                  onChange={(event) => setBroadcastMessage(event.target.value)}
+                  placeholder="Write your announcement here..."
+                />
+              </label>
+              <button className="solid" type="submit" disabled={broadcasting}>
+                {broadcasting ? "Sending..." : "Send Broadcast"}
               </button>
             </form>
 
