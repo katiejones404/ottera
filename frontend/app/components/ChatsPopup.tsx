@@ -8,6 +8,8 @@ import {
   fetchMessages,
   sendMessage,
   startDM,
+  toggleMessageLike,
+  refreshAccessToken,
 } from "../lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
@@ -30,29 +32,58 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Always holds the latest valid access token (refreshed if expired)
+  const tokenRef = useRef(accessToken);
 
   const activeConv = conversations.find((c) => c.id === activeConvId) ?? null;
 
-  // Load conversations on mount
+  // Refresh the access token if it is expired or expiring within 60 s
+  useEffect(() => {
+    const tryRefresh = async () => {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("ottera_auth_session") : null;
+      if (!raw) return;
+      let session: { accessToken: string; refreshToken: string };
+      try { session = JSON.parse(raw); } catch { return; }
+
+      // Decode JWT exp without verifying signature
+      try {
+        const payload = JSON.parse(atob(session.accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+        if (payload.exp > Math.floor(Date.now() / 1000) + 60) {
+          tokenRef.current = session.accessToken;
+          return; // Still valid
+        }
+      } catch { /* fall through to refresh */ }
+
+      try {
+        const tokens = await refreshAccessToken(session.refreshToken);
+        const updated = { ...session, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
+        localStorage.setItem("ottera_auth_session", JSON.stringify(updated));
+        tokenRef.current = tokens.access_token;
+      } catch { /* keep existing token */ }
+    };
+    tryRefresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load conversations — reads token from ref so it always uses the latest
   const loadConversations = useCallback(async () => {
     try {
-      const data = await fetchConversations(accessToken);
+      const data = await fetchConversations(tokenRef.current);
       setConversations(data);
       return data;
     } catch {
       return [];
     }
-  }, [accessToken]);
+  }, []);
 
   // Load messages for selected conversation
   const loadMessages = useCallback(async (convId: string) => {
     try {
-      const data = await fetchMessages(convId, accessToken);
+      const data = await fetchMessages(convId, tokenRef.current);
       setMessages(data);
     } catch {
       setMessages([]);
     }
-  }, [accessToken]);
+  }, []);
 
   // Set up socket.io
   useEffect(() => {
@@ -69,12 +100,17 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
           (prev.length > 0 && prev[0]?.conversation_id === msg.conversation_id) ||
           activeConvId === msg.conversation_id;
         if (!inConv) return prev;
-        // Deduplicate by id just in case
         if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
+        return [...prev, { ...msg, like_count: 0, liked_by_me: false }];
       });
-      // Refresh conversation list to update last message preview
       loadConversations();
+    });
+
+    // Update like counts in real-time for everyone in the channel
+    socket.on("message_liked", ({ message_id, like_count }: { message_id: string; conversation_id: string; like_count: number }) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === message_id ? { ...m, like_count } : m)
+      );
     });
 
     return () => { socket.disconnect(); };
@@ -95,7 +131,6 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
     };
     window.addEventListener("ottera:open_dm", handler);
 
-    // Check sessionStorage on mount
     const pending = sessionStorage.getItem("ottera_open_dm");
     if (pending) {
       sessionStorage.removeItem("ottera_open_dm");
@@ -112,7 +147,6 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
     if (activeConvId) loadMessages(activeConvId);
   }, [activeConvId, loadMessages]);
 
-  // Scroll to bottom when messages update
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -128,11 +162,10 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
     if (uname === username) { setDmError("You can't message yourself."); return; }
     setDmError("");
     try {
-      const conv = await startDM(uname, accessToken);
+      const conv = await startDM(uname, tokenRef.current);
       await loadConversations();
       setActiveConvId(conv.id);
       setDmUsername("");
-      // Join the new room
       socketRef.current?.emit("join_conversations", [conv.id]);
     } catch (e: unknown) {
       setDmError(e instanceof Error ? e.message : "User not found");
@@ -143,7 +176,6 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
     if (!newMsg.trim() || !activeConvId) return;
     setSendError("");
 
-    // Optimistic update
     const optimistic: ConversationMessage = {
       id: `temp-${Date.now()}`,
       conversation_id: activeConvId,
@@ -151,27 +183,63 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
       sender_username: username,
       content: newMsg.trim(),
       created_at: new Date().toISOString(),
+      like_count: 0,
+      liked_by_me: false,
     };
     setMessages((prev) => [...prev, optimistic]);
     const content = newMsg.trim();
     setNewMsg("");
 
     try {
-      const real = await sendMessage(activeConvId, content, accessToken);
-      // Replace the temp optimistic message with the real one from the server
+      const real = await sendMessage(activeConvId, content, tokenRef.current);
       setMessages((prev) =>
-        prev.map((m) => (m.id === optimistic.id ? real : m))
+        prev.map((m) => (m.id === optimistic.id ? { ...real, like_count: 0, liked_by_me: false } : m))
       );
     } catch (e: unknown) {
       setSendError(e instanceof Error ? e.message : "Failed to send");
-      // Remove optimistic message on failure
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+    }
+  };
+
+  const handleLike = async (msg: ConversationMessage) => {
+    // Optimistic toggle
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== msg.id) return m;
+        const wasLiked = m.liked_by_me ?? false;
+        return {
+          ...m,
+          liked_by_me: !wasLiked,
+          like_count: (m.like_count ?? 0) + (wasLiked ? -1 : 1),
+        };
+      })
+    );
+    try {
+      const { liked, like_count } = await toggleMessageLike(msg.id, tokenRef.current);
+      setMessages((prev) =>
+        prev.map((m) => m.id === msg.id ? { ...m, liked_by_me: liked, like_count } : m)
+      );
+    } catch {
+      // Revert optimistic on failure
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== msg.id) return m;
+          const wasLiked = m.liked_by_me ?? false;
+          return {
+            ...m,
+            liked_by_me: !wasLiked,
+            like_count: (m.like_count ?? 0) + (wasLiked ? -1 : 1),
+          };
+        })
+      );
     }
   };
 
   const convLabel = (conv: Conversation) => {
     if (conv.type === "channel") return conv.nonprofits?.name || "Channel";
-    return conv.otherUsername ? `@${conv.otherUsername}` : "Direct Message";
+    if (conv.otherFirstName && conv.otherUsername) return `${conv.otherFirstName} (@${conv.otherUsername})`;
+    if (conv.otherUsername) return `@${conv.otherUsername}`;
+    return "Direct Message";
   };
 
   const convIcon = (conv: Conversation) => {
@@ -189,7 +257,6 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
       <div className="chats-body">
         {/* Left: conversation list */}
         <div className="chats-list">
-          {/* New DM input */}
           <div className="chats-new-dm">
             <input
               ref={inputRef}
@@ -250,15 +317,30 @@ export default function ChatsPopup({ accessToken, userId, username, onClose }: P
                 )}
                 {messages.map((msg) => {
                   const isMe = msg.sender_id === userId || msg.sender_username === username;
+                  const isChannel = activeConv.type === "channel";
+                  const likeCount = msg.like_count ?? 0;
+                  const likedByMe = msg.liked_by_me ?? false;
                   return (
                     <div key={msg.id} className={`chat-message${isMe ? " mine" : " theirs"}`}>
                       {!isMe && (
                         <span className="chat-sender">@{msg.sender_username}</span>
                       )}
                       <div className="chat-bubble">{msg.content}</div>
-                      <span className="chat-time">
-                        {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
+                      <div className="chat-message-footer">
+                        <span className="chat-time">
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        {isChannel && !msg.id.startsWith("temp-") && (
+                          <button
+                            className={`chat-like-btn${likedByMe ? " liked" : ""}`}
+                            onClick={() => handleLike(msg)}
+                            aria-label={likedByMe ? "Unlike" : "Like"}
+                            title={likedByMe ? "Unlike" : "Like"}
+                          >
+                            👍{likeCount > 0 && <span className="chat-like-count">{likeCount}</span>}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

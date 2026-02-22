@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { CommunityEvent, fetchEvents, submitRsvp } from "../lib/api";
+import { CommunityEvent, RsvpEntry, fetchEvents, submitRsvp, fetchEventRsvps } from "../lib/api";
 import { loadSession } from "../lib/session";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -34,6 +34,9 @@ export default function EventsCalendar() {
   const [selectedEvent, setSelectedEvent] = useState<CommunityEvent | null>(null);
   const [rsvpSuccess, setRsvpSuccess] = useState(false);
   const [rsvpError, setRsvpError] = useState("");
+  const [rsvpList, setRsvpList] = useState<RsvpEntry[]>([]);
+  const [rsvpCount, setRsvpCount] = useState(0);
+  const [loadingRsvps, setLoadingRsvps] = useState(false);
 
   useEffect(() => {
     fetchEvents()
@@ -61,12 +64,24 @@ export default function EventsCalendar() {
     else setMonth((m) => m + 1);
   };
 
+  // Load RSVP list whenever creator selects an event
+  useEffect(() => {
+    if (!selectedEvent) { setRsvpList([]); setRsvpCount(0); return; }
+    const session = loadSession();
+    if (!session || session.account.id !== selectedEvent.posted_by_user_id) return;
+    setLoadingRsvps(true);
+    fetchEventRsvps(selectedEvent.id, session.accessToken)
+      .then(({ data, count }) => { setRsvpList(data); setRsvpCount(count); })
+      .catch(() => {})
+      .finally(() => setLoadingRsvps(false));
+  }, [selectedEvent]);
+
   const handleRsvp = async () => {
     if (!selectedEvent) return;
     const session = loadSession();
     if (!session) { setRsvpError("Log in to RSVP."); return; }
     try {
-      await submitRsvp(selectedEvent.id, session.account.id);
+      await submitRsvp(selectedEvent.id, session.accessToken);
       setRsvpSuccess(true);
       setRsvpError("");
     } catch (e: unknown) {
@@ -136,6 +151,25 @@ export default function EventsCalendar() {
                 </a>
               )}
             </div>
+            {/* RSVP list — visible only to the event creator */}
+            {(() => {
+              const session = typeof window !== "undefined" ? loadSession() : null;
+              if (!session || session.account.id !== selectedEvent.posted_by_user_id) return null;
+              return (
+                <div className="event-rsvp-list">
+                  <div className="event-rsvp-list-header">
+                    {loadingRsvps ? "Loading RSVPs…" : `${rsvpCount} RSVP${rsvpCount !== 1 ? "s" : ""}`}
+                  </div>
+                  {rsvpList.length > 0 && (
+                    <ul className="event-rsvp-names">
+                      {rsvpList.map((r) => (
+                        <li key={r.user_id}>@{r.username || "user"}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
             {rsvpSuccess ? (
               <p className="form-success">You&apos;re RSVPed!</p>
             ) : (

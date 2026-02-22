@@ -1247,6 +1247,21 @@ app.post('/auth/login', async (req, res) => {
   }
 })
 
+app.post('/auth/refresh', async (req, res) => {
+  const { refresh_token } = req.body
+  if (!refresh_token) return res.status(400).json({ error: 'refresh_token required' })
+  try {
+    const { data, error } = await supabaseAuth.auth.refreshSession({ refresh_token })
+    if (error || !data?.session) return res.status(401).json({ error: error?.message || 'Refresh failed' })
+    return res.json({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/users/me/profile', async (req, res) => {
   const user = await requireAuthenticatedUser(req, res)
   if (!user) return
@@ -2107,17 +2122,56 @@ app.post('/create-post', async (req, res) => {
 
 // POST /rsvp
 app.post('/rsvp', async (req, res) => {
-  const { event_id, user_id } = req.body
-  if (!event_id || !user_id) return res.status(400).json({ error: 'missing' })
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { event_id } = req.body
+  if (!event_id) return res.status(400).json({ error: 'missing event_id' })
 
   try {
+    const { data: profile } = await loadProfileByUserId(user.id)
+    const username = profile?.username || null
+
     const { data, error } = await supabase
       .from('rsvps')
-      .insert([{ event_id, user_id }])
-    if (error) return res.status(500).json({ error })
+      .insert([{ event_id, user_id: user.id, username }])
+    if (error) {
+      if (error.code === '23505') return res.json({ data: null, already: true })
+      return res.status(500).json({ error: error.message })
+    }
     res.json({ data })
   } catch (e) {
     res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /events/:id/rsvps — event creator sees who RSVPed
+app.get('/events/:id/rsvps', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id } = req.params
+  try {
+    const { data: event } = await supabase
+      .from('community_events')
+      .select('posted_by_user_id')
+      .eq('id', id)
+      .single()
+
+    if (!event || event.posted_by_user_id !== user.id) {
+      return res.status(403).json({ error: 'Only the event creator can view RSVPs' })
+    }
+
+    const { data, error } = await supabase
+      .from('rsvps')
+      .select('user_id, username, created_at')
+      .eq('event_id', id)
+      .order('created_at', { ascending: true })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || [], count: (data || []).length })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
   }
 })
 
@@ -2371,20 +2425,23 @@ app.get('/conversations', async (req, res) => {
 
         const lastMessage = msgs?.[0] || null
 
-        // For DMs, get the other participant's username
+        // For DMs, get the other participant's name and username
         let otherUsername = null
+        let otherFirstName = null
         if (conv.type === 'dm') {
           const { data: parts } = await supabase
             .from('conversation_participants')
-            .select('user_id, profiles:user_id(username)')
+            .select('user_id, profiles:user_id(username, first_name)')
             .eq('conversation_id', conv.id)
             .neq('user_id', user.id)
             .limit(1)
 
-          otherUsername = parts?.[0]?.profiles?.username || null
+          const otherProfile = parts?.[0]?.profiles || null
+          otherUsername = otherProfile?.username || null
+          otherFirstName = otherProfile?.first_name || null
         }
 
-        return { ...conv, lastMessage, otherUsername }
+        return { ...conv, lastMessage, otherUsername, otherFirstName }
       })
     )
 
@@ -2482,13 +2539,24 @@ app.get('/conversations/:id/messages', async (req, res) => {
 
     const { data, error } = await supabase
       .from('messages')
-      .select('*')
+      .select('*, message_likes(user_id)')
       .eq('conversation_id', id)
       .order('created_at', { ascending: true })
       .limit(100)
 
     if (error) return res.status(500).json({ error: error.message })
-    return res.json({ data: data || [] })
+
+    // Attach like_count and liked_by_me; strip raw like rows
+    const enriched = (data || []).map((msg) => {
+      const likes = msg.message_likes || []
+      return {
+        ...msg,
+        message_likes: undefined,
+        like_count: likes.length,
+        liked_by_me: likes.some((l) => l.user_id === user.id),
+      }
+    })
+    return res.json({ data: enriched })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
@@ -2528,6 +2596,57 @@ app.post('/conversations/:id/messages', async (req, res) => {
     io.to(`conversation:${id}`).emit('new_message', message)
 
     return res.status(201).json({ data: message })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /messages/:id/like — toggle like on a channel message
+app.post('/messages/:id/like', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { id: messageId } = req.params
+  try {
+    // Verify message exists and get its conversation
+    const { data: msg } = await supabase
+      .from('messages')
+      .select('id, conversation_id')
+      .eq('id', messageId)
+      .single()
+    if (!msg) return res.status(404).json({ error: 'Message not found' })
+
+    // Check if already liked
+    const { data: existing } = await supabase
+      .from('message_likes')
+      .select('message_id')
+      .eq('message_id', messageId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (existing) {
+      await supabase.from('message_likes').delete()
+        .eq('message_id', messageId).eq('user_id', user.id)
+    } else {
+      await supabase.from('message_likes').insert([{ message_id: messageId, user_id: user.id }])
+    }
+
+    const { count } = await supabase
+      .from('message_likes')
+      .select('*', { count: 'exact', head: true })
+      .eq('message_id', messageId)
+
+    const likeCount = count || 0
+    const liked = !existing
+
+    // Broadcast updated count to everyone in the conversation
+    io.to(`conversation:${msg.conversation_id}`).emit('message_liked', {
+      message_id: messageId,
+      conversation_id: msg.conversation_id,
+      like_count: likeCount,
+    })
+
+    return res.json({ liked, like_count: likeCount })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
