@@ -1,59 +1,33 @@
+// app/page.tsx
 "use client";
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import PortalShell from "./components/PortalShell";
-import PublicLanding from "./components/PublicLanding";
-import type { Account } from "./data/roles";
-import { clearSession, loadSession, type StoredSession } from "./lib/session";
 
-export default function Home() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [sessionData, setSessionData] = useState<StoredSession | null>(() => loadSession());
-  const session: Account | null = sessionData?.account ?? null;
-  const defaultZip = sessionData?.zipCode ?? "";
+import React from "react";
+import Link from "next/link";
+import HomeLanding from "./components/PublicLanding"; // adjust name/path if different
 
-  // Read directly from URL on every render — no stale useState
-  const requestedPage = searchParams.get("page");
-  const currentPage =
-    requestedPage === "about" || requestedPage === "resources" || requestedPage === "home"
-      ? requestedPage
-      : "home";
-
-  const handleSignOut = () => {
-    clearSession();
-    setSessionData(null);
+export default function HomePage() {
+  const scrollToHowItWorks = () => {
+    const element = document.getElementById("how-it-works");
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   return (
-    <div className="app-shell">
-      <main>
-        {currentPage === "resources" ? (
-          <PublicLanding
-            activePage="resources"
-            onEnterPortal={() => router.push(session ? "/resources" : "/resources/zipcode")}
-            onNavigate={() => router.push(session ? "/resources" : "/resources/zipcode")}
-            isAuthenticated={Boolean(session)}
-            defaultZipcode={defaultZip}
-          />
-        ) : session ? (
-          <PortalShell session={session} onReturnToLanding={handleSignOut} />
-        ) : (
-          <PublicLanding
-            activePage={currentPage}
-            onEnterPortal={() => router.push("/resources/zipcode")}
-            onNavigate={(page) => {
-              if (page === "about") router.push("/?page=about");
-              if (page === "home") router.push("/");
-              if (page === "resources") router.push("/resources/zipcode");
-            }}
-            isAuthenticated={false}
-            defaultZipcode=""
-          />
-        )}
-      </main>
+    <main>
+      {/* If HomeLanding is a client component, passing handlers from a client parent is allowed */}
+      <HomeLanding
+        activePage="home"
+        isAuthenticated={false}
+        defaultZipcode=""
+        // pass handlers that the landing expects (adjust names to match your component props)
+        onEnterPortal={() => {}}
+        onNavigate={() => {}}
+        onScrollToHowItWorks={scrollToHowItWorks} // optional: if HomeLanding expects this prop
+      />
 
-      <footer className="footer">Ottera PearlHacks 2026 prototype</footer>
-    </div>
+      {/* If you keep the JSX directly here instead of a component, keep the same "use client"; at top */}
+      {/* Or you can inline your landing JSX here (previous markup you pasted) */}
+    </main>
   );
 }
