@@ -21,7 +21,7 @@ export default function LoginPage() {
       setLoading(true);
       const result = await loginUser({ email: email.trim(), password });
       saveSession(toStoredSession(result));
-      router.push("/");
+      router.push("/?page=resources");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

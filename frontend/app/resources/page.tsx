@@ -1,11 +1,13 @@
-"use client";
+import ResourcesClient from "./resources-client";
 
-import PublicLanding from "../components/PublicLanding";
+type ResourcesPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default function ResourcesPage() {
-  return (
-    <main>
-      <PublicLanding activePage="resources" onEnterPortal={() => {}} />
-    </main>
-  );
+export default async function ResourcesPage({ searchParams }: ResourcesPageProps) {
+  const params = (await searchParams) || {};
+  const rawZip = Array.isArray(params.zip) ? params.zip[0] : params.zip;
+  const initialZip = (rawZip || "").replace(/\D/g, "").slice(0, 5);
+
+  return <ResourcesClient initialZip={initialZip} />;
 }

@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  DISTANCE_FILTERS,
+  MAX_SEARCH_DISTANCE_MILES,
+  MIN_SEARCH_DISTANCE_MILES,
   type ResourceCategory,
   getFilteredPosts,
 } from "../data/resources";
+import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
 
 type ResourceCategoryPageProps = {
   category: ResourceCategory;
@@ -15,11 +17,38 @@ type ResourceCategoryPageProps = {
 export default function ResourceCategoryPage({ category }: ResourceCategoryPageProps) {
   const router = useRouter();
   const [zipcode, setZipcode] = useState("");
-  const [distanceLimit, setDistanceLimit] = useState<number>(10);
+  const [distanceLimit, setDistanceLimit] = useState<number>(25);
+  const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const normalizedZip = zipcode.trim().slice(0, 5);
+
+    if (!/^\d{5}$/.test(normalizedZip)) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    Promise.all(
+      category.posts.map(async (post) => {
+        const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
+        return [post.id, nearest ?? post.distanceMiles] as const;
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setResolvedDistances(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [zipcode, category.posts]);
 
   const filteredPosts = useMemo(() => {
-    return getFilteredPosts(category.posts, zipcode, distanceLimit);
-  }, [category.posts, zipcode, distanceLimit]);
+    const distanceMap = /^\d{5}$/.test(zipcode.trim().slice(0, 5)) ? resolvedDistances : {};
+    return getFilteredPosts(category.posts, zipcode, distanceLimit, distanceMap);
+  }, [category.posts, zipcode, distanceLimit, resolvedDistances]);
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -61,16 +90,19 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
         />
 
         <div className="distance-filter-buttons" role="group" aria-label="Distance filter">
-          {DISTANCE_FILTERS.map((filter) => (
-            <button
-              key={filter.label}
-              type="button"
-              className={distanceLimit === filter.value ? "active" : ""}
-              onClick={() => setDistanceLimit(filter.value)}
-            >
-              {filter.label}
-            </button>
-          ))}
+          <label htmlFor="detail-distance-slider" className="distance-slider-label">
+            Distance: <strong>{distanceLimit} miles</strong>
+          </label>
+          <input
+            id="detail-distance-slider"
+            className="distance-slider"
+            type="range"
+            min={MIN_SEARCH_DISTANCE_MILES}
+            max={MAX_SEARCH_DISTANCE_MILES}
+            step={1}
+            value={distanceLimit}
+            onChange={(event) => setDistanceLimit(Number(event.target.value))}
+          />
         </div>
 
         <p className="results-caption">
@@ -85,6 +117,13 @@ export default function ResourceCategoryPage({ category }: ResourceCategoryPageP
             <h3>{post.title}</h3>
             <p>{post.description}</p>
             <p className="post-meta">{post.location}</p>
+            <p className="post-meta">
+              {(
+                (/^\d{5}$/.test(zipcode.trim().slice(0, 5))
+                  ? resolvedDistances[post.id]
+                  : undefined) ?? post.distanceMiles
+              ).toFixed(1)} miles away
+            </p>
           </article>
         ))}
       </section>

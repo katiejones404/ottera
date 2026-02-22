@@ -9,6 +9,7 @@ export type StoredSession = {
   account: Account;
   email: string;
   username: string;
+  zipCode: string;
   roles: string[];
 };
 
@@ -23,6 +24,7 @@ export const toStoredSession = (auth: AuthResponse): StoredSession => ({
   refreshToken: auth.refresh_token,
   email: auth.email,
   username: auth.username,
+  zipCode: (auth.zip_code || "").trim(),
   roles: auth.roles || [],
   account: {
     id: auth.user_id,

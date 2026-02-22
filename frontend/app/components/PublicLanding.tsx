@@ -1,26 +1,33 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  DISTANCE_FILTERS,
+  MAX_SEARCH_DISTANCE_MILES,
+  MIN_SEARCH_DISTANCE_MILES,
   RESOURCE_CATEGORIES,
   getFilteredPosts,
 } from "../data/resources";
+import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
 
 type PublicLandingProps = {
   activePage: string;
   onEnterPortal: () => void;
   onNavigate?: (page: string) => void;
+  isAuthenticated?: boolean;
+  defaultZipcode?: string;
 };
 
 export default function PublicLanding({
   activePage,
   onEnterPortal,
   onNavigate,
+  isAuthenticated = false,
+  defaultZipcode = "",
 }: PublicLandingProps) {
   const router = useRouter();
   const howRef = useRef<HTMLElement | null>(null);
-  const [zipcode, setZipcode] = useState("");
-  const [distanceLimit, setDistanceLimit] = useState<number>(10);
+  const [zipcode, setZipcode] = useState(defaultZipcode.trim().slice(0, 5));
+  const [distanceLimit, setDistanceLimit] = useState<number>(25);
+  const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
 
   const goToResources = () => {
     if (onNavigate) onNavigate("resources");
@@ -35,12 +42,43 @@ export default function PublicLanding({
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const normalizedZip = zipcode.trim().slice(0, 5);
+
+    if (!/^\d{5}$/.test(normalizedZip)) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const allPosts = RESOURCE_CATEGORIES.flatMap((category) => category.posts);
+    Promise.all(
+      allPosts.map(async (post) => {
+        const nearest = await getNearestDistanceMilesForZip(normalizedZip, post.zipcodes);
+        return [post.id, nearest ?? post.distanceMiles] as const;
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setResolvedDistances(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [zipcode]);
+
+  const hasValidZip = /^\d{5}$/.test(zipcode.trim().slice(0, 5));
+
   const rowsToDisplay = useMemo(() => {
+    const distanceMap = hasValidZip ? resolvedDistances : {};
     return RESOURCE_CATEGORIES.map((category) => ({
       ...category,
-      visiblePosts: getFilteredPosts(category.posts, zipcode, distanceLimit).slice(0, 3),
+      visiblePosts: hasValidZip
+        ? getFilteredPosts(category.posts, zipcode, distanceLimit, distanceMap).slice(0, 3)
+        : [],
     }));
-  }, [zipcode, distanceLimit]);
+  }, [zipcode, distanceLimit, resolvedDistances, hasValidZip]);
 
   if (activePage === "about") {
     return (
@@ -78,46 +116,66 @@ export default function PublicLanding({
           />
 
           <div className="distance-filter-buttons" role="group" aria-label="Distance filter">
-            {DISTANCE_FILTERS.map((filter) => (
-              <button
-                key={filter.label}
-                type="button"
-                className={distanceLimit === filter.value ? "active" : ""}
-                onClick={() => setDistanceLimit(filter.value)}
-              >
-                {filter.label}
-              </button>
-            ))}
+            <label htmlFor="distance-slider" className="distance-slider-label">
+              Distance: <strong>{distanceLimit} miles</strong>
+            </label>
+            <input
+              id="distance-slider"
+              className="distance-slider"
+              type="range"
+              min={MIN_SEARCH_DISTANCE_MILES}
+              max={MAX_SEARCH_DISTANCE_MILES}
+              step={1}
+              value={distanceLimit}
+              onChange={(event) => setDistanceLimit(Number(event.target.value))}
+            />
           </div>
         </div>
 
-        {rowsToDisplay.map((row) => (
-          <article key={row.slug} className="resource-row">
-            <div className="resource-row-header">
-              <h2>{row.title}</h2>
-              <p>{row.sectionDescription}</p>
-            </div>
+        {!hasValidZip ? (
+          <section className="zip-empty-state">
+            <h2>Enter your ZIP code to view nearby resources</h2>
+            <p>
+              We will sort pantry, closet, and shelter listings by distance from
+              your location.
+            </p>
+          </section>
+        ) : (
+          rowsToDisplay.map((row) => (
+            <article key={row.slug} className="resource-row">
+              <div className="resource-row-header">
+                <h2>{row.title}</h2>
+                <p>{row.sectionDescription}</p>
+              </div>
 
-            <div className="resource-row-track" aria-label={`${row.title} posts`}>
-              {row.visiblePosts.map((post) => (
-                <article key={post.id} className="post-card">
-                  <div className="post-image">{post.imageLabel}</div>
-                  <h3>{post.title}</h3>
-                  <p>{post.description}</p>
-                  <p className="post-meta">{post.location}</p>
-                </article>
-              ))}
-            </div>
+              <div className="resource-row-track" aria-label={`${row.title} posts`}>
+                {row.visiblePosts.map((post) => (
+                  <article key={post.id} className="post-card">
+                    <div className="post-image">{post.imageLabel}</div>
+                    <h3>{post.title}</h3>
+                    <p>{post.description}</p>
+                    <p className="post-meta">{post.location}</p>
+                    <p className="post-meta">
+                      {(resolvedDistances[post.id] ?? post.distanceMiles).toFixed(1)} miles away
+                    </p>
+                  </article>
+                ))}
+              </div>
 
-            <button
-              type="button"
-              className="solid resource-cta"
-              onClick={() => router.push(`/resources/${row.slug}`)}
-            >
-              {row.ctaLabel}
-            </button>
-          </article>
-        ))}
+              <button
+                type="button"
+                className="solid resource-cta"
+                disabled={!isAuthenticated}
+                onClick={() => {
+                  if (!isAuthenticated) return;
+                  router.push(`/resources/${row.slug}`);
+                }}
+              >
+                {isAuthenticated ? row.ctaLabel : "Please sign in to Explore..."}
+              </button>
+            </article>
+          ))
+        )}
       </section>
     );
   }
