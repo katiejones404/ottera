@@ -7,9 +7,12 @@ import {
   MAX_SEARCH_DISTANCE_MILES,
   MIN_SEARCH_DISTANCE_MILES,
   type ResourceCategory,
+  type ResourceListingRecord,
+  buildCategoriesFromListings,
   getFilteredPosts,
 } from "../data/resources";
 import { getNearestDistanceMilesForZip } from "../lib/zipDistance";
+import { fetchResourceListings } from "../lib/api";
 
 type ResourceCategoryPageProps = {
   category: ResourceCategory;
@@ -42,6 +45,25 @@ export default function ResourceCategoryPage({
   const [zipcode, setZipcode] = useState(() => (initialZip ? initialZip.slice(0, 5) : ""));
   const [distanceLimit, setDistanceLimit] = useState<number>(25);
   const [resolvedDistances, setResolvedDistances] = useState<Record<string, number>>({});
+  const [posts, setPosts] = useState(category.posts);
+
+  useEffect(() => {
+    let cancelled = false
+    fetchResourceListings()
+      .then((rows) => {
+        if (cancelled) return
+        const categories = buildCategoriesFromListings(rows as ResourceListingRecord[])
+        const match = categories.find((item) => item.slug === category.slug)
+        if (match) setPosts(match.posts)
+      })
+      .catch(() => {
+        // fallback to static demo posts
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [category.slug])
 
   // memoize posts so identity doesn't change every render
   const posts = useMemo(() => category.posts ?? [], [category]);

@@ -1,14 +1,26 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { loadSession } from "../../lib/session";
 
 export default function ZipcodeGatePage() {
   const router = useRouter();
-  const session = loadSession();
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  const session = isHydrated ? loadSession() : null;
   const [zip, setZip] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedZip = (session?.zipCode || "").replace(/\D/g, "").slice(0, 5);
+    if (isHydrated && /^\d{5}$/.test(savedZip)) {
+      router.replace(`/resources?zip=${savedZip}`);
+    }
+  }, [isHydrated, session, router]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -14,6 +14,7 @@ export type StoredSession = {
 };
 
 const mapRole = (primaryRole: string): Role => {
+  if (primaryRole === "admin") return ROLES.ADMIN;
   if (primaryRole === "volunteer") return ROLES.VOLUNTEER;
   if (primaryRole === "nonprofit_employee") return ROLES.DISTRIBUTOR;
   return ROLES.USER;

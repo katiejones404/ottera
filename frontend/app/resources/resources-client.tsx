@@ -1,7 +1,7 @@
 // frontend/app/resources/resources-client.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+<!-- import React, { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -9,7 +9,11 @@ import {
   type ResourceCategory,
   getResourceCategoryBySlug,
 } from "../data/resources";
-import ResourceCategoryPage from "../components/ResourceCategoryPage";
+import ResourceCategoryPage from "../components/ResourceCategoryPage"; -->
+import { useEffect, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
+import PublicLanding from "../components/PublicLanding";
+import { loadSession } from "../lib/session";
 
 type Props = {
   initialZip?: string;
@@ -17,7 +21,7 @@ type Props = {
 
 export default function ResourcesClient({ initialZip = "" }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+<!-- ALEXAAAA  const searchParams = useSearchParams();
   const categoryParam = searchParams?.get?.("category") ?? "";
   const zipParam = searchParams?.get?.("zip") ?? initialZip ?? "";
 
@@ -44,7 +48,22 @@ export default function ResourcesClient({ initialZip = "" }: Props) {
     if (!category) {
       // If slug invalid, fallback to showing categories grid so user can pick
       return <div className="p-8">Category not found. <Link href={`/resources?zip=${normalizedZip}`}>Back</Link></div>;
+    } -->
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  const session = isHydrated ? loadSession() : null;
+  const fallbackZip = (session?.zipCode || "").replace(/\D/g, "").slice(0, 5);
+  const defaultZipcode = initialZip || fallbackZip;
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!session && !defaultZipcode) {
+      router.replace("/resources/zipcode");
     }
+  }, [isHydrated, session, defaultZipcode, router]);
 
     // Pass initialZip so the category page can seed its zipcode input
     return <ResourceCategoryPage category={category} initialZip={normalizedZip} />;
@@ -52,13 +71,13 @@ export default function ResourcesClient({ initialZip = "" }: Props) {
 
   // Otherwise show a categories grid
   return (
-    <main className="max-w-6xl mx-auto p-6">
+<!-- ALEXAAAA    <main className="max-w-6xl mx-auto p-6">
       <div className="mb-6">
         <p className="text-sm text-muted">Showing categories for ZIP <strong>{normalizedZip}</strong></p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {RESOURCE_CATEGORIES.map((c) => (
+<!--         {RESOURCE_CATEGORIES.map((c) => (
           <div key={c.slug} className="p-6 rounded shadow bg-white">
             <h3 className="text-xl font-semibold">{c.title}</h3>
             <p className="mt-2 text-sm">{c.sectionDescription}</p>
@@ -77,8 +96,16 @@ export default function ResourcesClient({ initialZip = "" }: Props) {
               </Link>
             </div>
           </div>
-        ))}
-      </div>
+        ))} -->
+      </div> -->
+    <main>
+      <PublicLanding
+        key={`resources-${defaultZipcode}-${session ? "auth" : "guest"}-${isHydrated ? "hydrated" : "ssr"}`}
+        activePage="resources"
+        onEnterPortal={() => {}}
+        isAuthenticated={Boolean(session)}
+        defaultZipcode={defaultZipcode}
+      />
     </main>
   );
 }

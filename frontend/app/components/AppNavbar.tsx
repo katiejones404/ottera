@@ -1,21 +1,18 @@
 // app/components/AppNavbar.tsx
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Header from "./Header";
 import { clearSession, loadSession } from "../lib/session";
 
-function getActivePage(pathname: string | null, searchParams: ReturnType<typeof useSearchParams>) {
-  if (pathname?.startsWith("/resources")) return "resources";
-  if (pathname === "/about") return "about";
-
-  // If we're at root ("/") we may have a legacy query param like "?page=about".
-  // Only use the query param as a fallback when pathname is "/" or null/undefined.
-  if (!pathname || pathname === "/") {
-    const requested = searchParams?.get?.("page");
-    if (requested === "about" || requested === "resources" || requested === "home") {
-      return requested;
-    }
+function getActivePage(pathname: string, searchParams: URLSearchParams): string {
+  if (pathname.startsWith("/aboutus")) return "about";
+  if (pathname.startsWith("/resources")) return "resources";
+  if (pathname.startsWith("/partner-with-us")) return "partner";
+  const requested = searchParams.get("page");
+  if (requested === "about" || requested === "home") {
+    return requested;
   }
 
   return "home";
@@ -25,7 +22,14 @@ export default function AppNavbar() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const session = loadSession()?.account ?? null;
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  const stored = isHydrated ? loadSession() : null;
+  const session = stored?.account ?? null;
+  const sessionRoles = stored?.roles ?? [];
 
   const activePage = getActivePage(pathname, searchParams);
 
@@ -36,8 +40,7 @@ export default function AppNavbar() {
     }
 
     if (page === "about") {
-      // <--- navigate to the canonical route (no query string)
-      router.push("/about");
+      router.push("/aboutus");
       return;
     }
 
@@ -47,6 +50,12 @@ export default function AppNavbar() {
       } else {
         router.push("/resources/zipcode");
       }
+      return;
+    }
+
+    if (page === "partner") {
+      router.push("/partner-with-us");
+      return;
     }
   };
 
@@ -55,11 +64,25 @@ export default function AppNavbar() {
     router.push("/");
   };
 
+  // Keep SSR and first client paint consistent to avoid hydration mismatch.
+  if (!isHydrated) {
+    return (
+      <Header
+        activePage={activePage}
+        onNavigate={onNavigate}
+        session={null}
+        sessionRoles={[]}
+        onSignOut={onSignOut}
+      />
+    );
+  }
+
   return (
     <Header
       activePage={activePage}
       onNavigate={onNavigate}
       session={session}
+      sessionRoles={sessionRoles}
       onSignOut={onSignOut}
     />
   );

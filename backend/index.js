@@ -12,19 +12,106 @@ app.use(express.json())
 const PORT = process.env.PORT || 4000
 
 const ALLOWED_ROLES = new Set([
+  'admin',
   'person_in_need',
   'clothes_donor',
   'volunteer',
   'nonprofit_employee'
 ])
 
-const ALLOWED_FOCUS_AREAS = new Set(['clothing', 'healthcare', 'shelter', 'food', 'other'])
+const ALLOWED_FOCUS_AREAS = new Set(['clothing', 'healthcare', 'shelter', 'food', 'miscellaneous', 'other'])
+
+const normalizeFocusArea = (focusArea) => {
+  if (!focusArea) return 'miscellaneous'
+  if (focusArea === 'other') return 'miscellaneous'
+  return focusArea
+}
 
 const getPrimaryRole = (roles = []) => {
+  if (roles.includes('admin')) return 'admin'
   if (roles.includes('nonprofit_employee')) return 'nonprofit_employee'
   if (roles.includes('volunteer')) return 'volunteer'
   if (roles.includes('clothes_donor')) return 'clothes_donor'
   return 'person_in_need'
+}
+
+const getBearerToken = (req) => {
+  const authHeader = req.headers.authorization || ''
+  const [scheme, token] = authHeader.split(' ')
+  if (scheme !== 'Bearer' || !token) return null
+  return token
+}
+
+const requireAuthenticatedUser = async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    res.status(401).json({ error: 'missing bearer token' })
+    return null
+  }
+
+  const { data: userData, error: userErr } = await supabase.auth.getUser(token)
+  if (userErr || !userData?.user?.id) {
+    res.status(401).json({ error: userErr?.message || 'invalid auth token' })
+    return null
+  }
+
+  return userData.user
+}
+
+const loadProfileByUserId = async (userId) =>
+  supabase
+    .from('profiles')
+    .select('id, first_name, last_name, username, email, zip_code')
+    .eq('id', userId)
+    .single()
+
+const canUserManageNonprofit = async ({ nonprofitId, userId, username }) => {
+  if (!nonprofitId || !userId) return { allowed: false, error: null }
+
+  if (username) {
+    const { data: usernameRow, error: usernameErr } = await supabase
+      .from('nonprofit_admin_usernames')
+      .select('username')
+      .eq('nonprofit_id', nonprofitId)
+      .eq('username', username)
+      .maybeSingle()
+    if (usernameErr) return { allowed: false, error: usernameErr }
+    if (usernameRow) return { allowed: true, error: null }
+  }
+
+  const { data: employee, error: employeeErr } = await supabase
+    .from('nonprofit_employees')
+    .select('is_admin')
+    .eq('nonprofit_id', nonprofitId)
+    .eq('user_id', userId)
+    .eq('is_admin', true)
+    .maybeSingle()
+  if (employeeErr) return { allowed: false, error: employeeErr }
+
+  return { allowed: Boolean(employee), error: null }
+}
+
+const requireAdmin = async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return null
+
+  const userId = user.id
+  const { data: roleRow, error: roleErr } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('role', 'admin')
+    .maybeSingle()
+  if (roleErr) {
+    res.status(500).json({ error: roleErr.message })
+    return null
+  }
+  if (!roleRow) {
+    res.status(403).json({ error: 'admin role required' })
+    return null
+  }
+
+  return user
 }
 
 // Health
@@ -38,6 +125,22 @@ app.get('/', (req, res) => {
     routes: [
       'POST /auth/register',
       'POST /auth/login',
+      'GET /users/me/profile',
+      'PATCH /users/me/profile',
+      'POST /users/me/password',
+      'GET /resources/listings',
+      'POST /resources/listings',
+      'GET /nonprofits/manage',
+      'PATCH /nonprofits/:nonprofitId/manage',
+      'POST /nonprofits/:nonprofitId/admin-usernames',
+      'DELETE /nonprofits/:nonprofitId/admin-usernames/:username',
+      'POST /partners/apply',
+      'GET /partners/applications',
+      'POST /partners/applications/:applicationId/approve',
+      'POST /partners/applications/:applicationId/deny',
+      'POST /admin/seed-distributors',
+      'GET /events',
+      'POST /events',
       'POST /users/:userId/roles',
       'POST /nonprofits',
       'POST /nonprofits/:nonprofitId/employees',
@@ -50,6 +153,654 @@ app.get('/', (req, res) => {
       'POST /rsvp'
     ]
   })
+})
+
+// Public resource listings (used by Find Resources page)
+app.get('/resources/listings', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('resource_listings')
+      .select(
+        'id, title, description, category_slug, listing_source, nonprofit_id, posted_by_username, location_label, zip_codes, website, contact_info, distribution_schedule, status, nonprofits:nonprofit_id(id, name, website, approval_status, focus_area)'
+      )
+      .eq('status', 'active')
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    const approvedRows = (data || []).filter((row) => {
+      if (row.listing_source !== 'nonprofit') return true
+      return row.nonprofits && row.nonprofits.approval_status === 'approved'
+    })
+
+    return res.json({ data: approvedRows })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Create a resource listing. Nonprofit listings require approved nonprofit + allowed admin username.
+app.post('/resources/listings', async (req, res) => {
+  const {
+    title,
+    description,
+    category_slug,
+    listing_source = 'individual',
+    nonprofit_id = null,
+    posted_by_username = null,
+    location_label,
+    zip_codes = [],
+    website = null,
+    contact_info = {},
+    distribution_schedule = null
+  } = req.body
+
+  if (!title || !description || !category_slug || !location_label) {
+    return res.status(400).json({ error: 'missing required fields: title, description, category_slug, location_label' })
+  }
+
+  if (!Array.isArray(zip_codes)) {
+    return res.status(400).json({ error: 'zip_codes must be an array' })
+  }
+
+  if (!['pantry', 'closet', 'shelters'].includes(category_slug)) {
+    return res.status(400).json({ error: 'invalid category_slug' })
+  }
+
+  if (!['individual', 'nonprofit'].includes(listing_source)) {
+    return res.status(400).json({ error: 'invalid listing_source' })
+  }
+
+  try {
+    if (listing_source === 'nonprofit') {
+      if (!nonprofit_id || !posted_by_username) {
+        return res.status(400).json({ error: 'nonprofit listings require nonprofit_id and posted_by_username' })
+      }
+
+      const { data: nonprofit, error: nonprofitErr } = await supabase
+        .from('nonprofits')
+        .select('id, approval_status')
+        .eq('id', nonprofit_id)
+        .single()
+      if (nonprofitErr || !nonprofit) {
+        return res.status(404).json({ error: nonprofitErr?.message || 'nonprofit not found' })
+      }
+
+      if (nonprofit.approval_status !== 'approved') {
+        return res.status(403).json({ error: 'nonprofit is not approved to post listings' })
+      }
+
+      const { data: adminAccess, error: adminErr } = await supabase
+        .from('nonprofit_admin_usernames')
+        .select('username')
+        .eq('nonprofit_id', nonprofit_id)
+        .eq('username', posted_by_username)
+        .maybeSingle()
+      if (adminErr) return res.status(500).json({ error: adminErr.message })
+      if (!adminAccess) {
+        return res.status(403).json({ error: 'username is not allowed to manage this nonprofit profile' })
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('resource_listings')
+      .insert([
+        {
+          title,
+          description,
+          category_slug,
+          listing_source,
+          nonprofit_id,
+          posted_by_username,
+          location_label,
+          zip_codes,
+          website,
+          contact_info,
+          distribution_schedule,
+          status: 'active'
+        }
+      ])
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(201).json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Nonprofit "Partner with us" intake
+app.post('/partners/apply', async (req, res) => {
+  const {
+    client_name,
+    website = null,
+    description,
+    distribution_schedule = null,
+    contact_email = null,
+    contact_phone = null,
+    addresses = [],
+    zip_codes = [],
+    focus_area = 'miscellaneous',
+    requested_admin_usernames = []
+  } = req.body
+  const normalizedFocusArea = normalizeFocusArea(focus_area)
+
+  if (!client_name || !description) {
+    return res.status(400).json({ error: 'missing required fields: client_name, description' })
+  }
+
+  if (!Array.isArray(addresses) || !Array.isArray(zip_codes) || !Array.isArray(requested_admin_usernames)) {
+    return res.status(400).json({ error: 'addresses, zip_codes, and requested_admin_usernames must be arrays' })
+  }
+  if (!ALLOWED_FOCUS_AREAS.has(normalizedFocusArea)) {
+    return res.status(400).json({ error: `invalid focus_area: ${focus_area}` })
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('partner_applications')
+      .insert([
+        {
+          client_name,
+          website,
+          description,
+          distribution_schedule,
+          contact_email,
+          contact_phone,
+          addresses,
+          zip_codes,
+          focus_area: normalizedFocusArea,
+          requested_admin_usernames
+        }
+      ])
+      .select('id, status, submitted_at')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(201).json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: review pending partner applications
+app.get('/partners/applications', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  try {
+    const { data, error } = await supabase
+      .from('partner_applications')
+      .select('*')
+      .order('submitted_at', { ascending: false })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: approve application and create nonprofit profile + allowed admin usernames
+app.post('/partners/applications/:applicationId/approve', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  const { applicationId } = req.params
+  const approvedBy = adminUser.email || adminUser.id
+
+  try {
+    const { data: application, error: appError } = await supabase
+      .from('partner_applications')
+      .select('*')
+      .eq('id', applicationId)
+      .single()
+
+    if (appError || !application) {
+      return res.status(404).json({ error: appError?.message || 'application not found' })
+    }
+
+    const extKey = `app_${application.id}`
+    const { data: nonprofit, error: nonprofitError } = await supabase
+      .from('nonprofits')
+      .upsert(
+        [
+          {
+            external_key: extKey,
+            name: application.client_name,
+            website: application.website,
+            zip_codes: application.zip_codes || [],
+            addresses: application.addresses || [],
+            focus_area: application.focus_area || 'other',
+            description: application.description,
+            distribution_schedule: application.distribution_schedule,
+            contact_email: application.contact_email,
+            contact_phone: application.contact_phone,
+            approval_status: 'approved',
+            approved_at: new Date().toISOString(),
+            approved_by: String(approvedBy)
+          }
+        ],
+        { onConflict: 'external_key' }
+      )
+      .select('id, name')
+      .single()
+
+    if (nonprofitError || !nonprofit) {
+      return res.status(500).json({ error: nonprofitError?.message || 'failed to upsert nonprofit' })
+    }
+
+    const adminUsernames = Array.isArray(application.requested_admin_usernames)
+      ? [...new Set(application.requested_admin_usernames.filter(Boolean))]
+      : []
+
+    if (adminUsernames.length > 0) {
+      const rows = adminUsernames.map((username) => ({ nonprofit_id: nonprofit.id, username }))
+      const { error: adminsError } = await supabase
+        .from('nonprofit_admin_usernames')
+        .upsert(rows, { onConflict: 'nonprofit_id,username', ignoreDuplicates: true })
+      if (adminsError) return res.status(500).json({ error: adminsError.message })
+    }
+
+    const { error: updateError } = await supabase
+      .from('partner_applications')
+      .update({
+        status: 'approved',
+        reviewed_at: new Date().toISOString(),
+        nonprofit_id: nonprofit.id
+      })
+      .eq('id', application.id)
+
+    if (updateError) return res.status(500).json({ error: updateError.message })
+
+    return res.json({ ok: true, nonprofit_id: nonprofit.id, nonprofit_name: nonprofit.name })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: deny partner application
+app.post('/partners/applications/:applicationId/deny', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  const { applicationId } = req.params
+
+  try {
+    const { data: application, error: appError } = await supabase
+      .from('partner_applications')
+      .select('id, status')
+      .eq('id', applicationId)
+      .single()
+
+    if (appError || !application) {
+      return res.status(404).json({ error: appError?.message || 'application not found' })
+    }
+
+    const { error: updateError } = await supabase
+      .from('partner_applications')
+      .update({
+        status: 'denied',
+        reviewed_at: new Date().toISOString()
+      })
+      .eq('id', application.id)
+
+    if (updateError) return res.status(500).json({ error: updateError.message })
+
+    return res.json({
+      ok: true,
+      denied_by: adminUser.email || adminUser.id,
+      application_id: application.id
+    })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: seed 10 distributor listings (3 clothing individuals, 3 shelter nonprofits, 4 food nonprofits)
+app.post('/admin/seed-distributors', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  try {
+    const nonprofits = [
+      {
+        external_key: 'np_harbor_shelter',
+        name: 'Harbor Shelter Network',
+        website: 'https://harborshelter.example.org',
+        zip_codes: ['27601', '27603'],
+        addresses: [{ line1: '120 Harbor St', city: 'Raleigh', state: 'NC', zip: '27601' }],
+        focus_area: 'shelter',
+        description: 'Emergency and transitional shelter with case management.',
+        distribution_schedule: 'Intake daily 6:00 PM - 9:00 PM',
+        contact_email: 'intake@harborshelter.example.org',
+        contact_phone: '(919) 555-1101',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      },
+      {
+        external_key: 'np_nightbridge_shelter',
+        name: 'NightBridge Community Shelter',
+        website: 'https://nightbridge.example.org',
+        zip_codes: ['27701', '27703'],
+        addresses: [{ line1: '45 Elm Ave', city: 'Durham', state: 'NC', zip: '27701' }],
+        focus_area: 'shelter',
+        description: 'Night shelter and housing referrals for adults and families.',
+        distribution_schedule: 'Beds released daily at 5:30 PM',
+        contact_email: 'hello@nightbridge.example.org',
+        contact_phone: '(919) 555-1102',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      },
+      {
+        external_key: 'np_safehaven_shelter',
+        name: 'SafeHaven Family Shelter',
+        website: 'https://safehaven.example.org',
+        zip_codes: ['27511', '27513'],
+        addresses: [{ line1: '880 Maple Rd', city: 'Cary', state: 'NC', zip: '27511' }],
+        focus_area: 'shelter',
+        description: 'Family shelter with children services and social worker support.',
+        distribution_schedule: 'Check-in Mon-Sun 4:00 PM - 8:00 PM',
+        contact_email: 'support@safehaven.example.org',
+        contact_phone: '(919) 555-1103',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      },
+      {
+        external_key: 'np_triangle_food_bank',
+        name: 'Triangle Food Distribution Coalition',
+        website: 'https://trianglefood.example.org',
+        zip_codes: ['27601', '27610', '27545'],
+        addresses: [{ line1: '210 Market St', city: 'Raleigh', state: 'NC', zip: '27601' }],
+        focus_area: 'food',
+        description: 'Weekly food boxes, pantry staples, and fresh produce pickup.',
+        distribution_schedule: 'Tue/Thu/Sat 10:00 AM - 2:00 PM',
+        contact_email: 'info@trianglefood.example.org',
+        contact_phone: '(919) 555-2201',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      },
+      {
+        external_key: 'np_freshroute_food',
+        name: 'FreshRoute Food Partners',
+        website: 'https://freshroute.example.org',
+        zip_codes: ['27701', '27704'],
+        addresses: [{ line1: '11 Greenway Blvd', city: 'Durham', state: 'NC', zip: '27701' }],
+        focus_area: 'food',
+        description: 'Mobile food distribution and community meal kits.',
+        distribution_schedule: 'Mon/Wed/Fri 11:30 AM - 4:30 PM',
+        contact_email: 'team@freshroute.example.org',
+        contact_phone: '(919) 555-2202',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      },
+      {
+        external_key: 'np_mealbridge_food',
+        name: 'MealBridge Outreach',
+        website: 'https://mealbridge.example.org',
+        zip_codes: ['27511', '27560'],
+        addresses: [{ line1: '94 Oak Park', city: 'Cary', state: 'NC', zip: '27511' }],
+        focus_area: 'food',
+        description: 'Neighborhood food access and prepared meal distribution.',
+        distribution_schedule: 'Daily noon distribution',
+        contact_email: 'contact@mealbridge.example.org',
+        contact_phone: '(919) 555-2203',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      },
+      {
+        external_key: 'np_openpantry_food',
+        name: 'Open Pantry Collective',
+        website: 'https://openpantry.example.org',
+        zip_codes: ['27514', '27516'],
+        addresses: [{ line1: '302 Franklin Ln', city: 'Chapel Hill', state: 'NC', zip: '27514' }],
+        focus_area: 'food',
+        description: 'Food pantry and home-delivery for seniors and families.',
+        distribution_schedule: 'Mon-Sat 9:00 AM - 1:00 PM',
+        contact_email: 'hello@openpantry.example.org',
+        contact_phone: '(919) 555-2204',
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: adminUser.email || adminUser.id
+      }
+    ]
+
+    const { data: nonprofitRows, error: nonprofitsError } = await supabase
+      .from('nonprofits')
+      .upsert(nonprofits, { onConflict: 'external_key' })
+      .select('id, external_key')
+
+    if (nonprofitsError) return res.status(500).json({ error: nonprofitsError.message })
+
+    const byKey = Object.fromEntries((nonprofitRows || []).map((row) => [row.external_key, row.id]))
+
+    const adminRows = [
+      ['np_harbor_shelter', 'harbor_admin'],
+      ['np_nightbridge_shelter', 'nightbridge_admin'],
+      ['np_safehaven_shelter', 'safehaven_admin'],
+      ['np_triangle_food_bank', 'trianglefood_admin'],
+      ['np_freshroute_food', 'freshroute_admin'],
+      ['np_mealbridge_food', 'mealbridge_admin'],
+      ['np_openpantry_food', 'openpantry_admin']
+    ]
+      .filter(([extKey]) => Boolean(byKey[extKey]))
+      .map(([extKey, username]) => ({ nonprofit_id: byKey[extKey], username }))
+
+    if (adminRows.length > 0) {
+      const { error: adminError } = await supabase
+        .from('nonprofit_admin_usernames')
+        .upsert(adminRows, { onConflict: 'nonprofit_id,username', ignoreDuplicates: true })
+      if (adminError) return res.status(500).json({ error: adminError.message })
+    }
+
+    const listings = [
+      {
+        external_key: 'clothing_threadswap_1',
+        title: 'ThreadSwap Free Closet',
+        description: 'Community member giving away seasonal clothing and shoes.',
+        category_slug: 'closet',
+        listing_source: 'individual',
+        posted_by_username: 'closetqueen_kia',
+        location_label: 'Raleigh, NC',
+        zip_codes: ['27601', '27603'],
+        distribution_schedule: 'Weekends 10:00 AM - 1:00 PM'
+      },
+      {
+        external_key: 'clothing_givebox_2',
+        title: 'GiveBox Apparel Pickup',
+        description: 'Free family clothing bundles by appointment.',
+        category_slug: 'closet',
+        listing_source: 'individual',
+        posted_by_username: 'givebox_morgan',
+        location_label: 'Durham, NC',
+        zip_codes: ['27701', '27703'],
+        distribution_schedule: 'Tue/Thu 4:00 PM - 7:00 PM'
+      },
+      {
+        external_key: 'clothing_rewear_3',
+        title: 'ReWear Closet Share',
+        description: 'Children and adult basics available every week.',
+        category_slug: 'closet',
+        listing_source: 'individual',
+        posted_by_username: 'rewear_aria',
+        location_label: 'Cary, NC',
+        zip_codes: ['27511', '27513'],
+        distribution_schedule: 'Sat 11:00 AM - 3:00 PM'
+      },
+      {
+        external_key: 'shelter_harbor_1',
+        title: 'Harbor Shelter Evening Intake',
+        description: 'Open beds and family intake services.',
+        category_slug: 'shelters',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_harbor_shelter'],
+        location_label: 'Raleigh, NC',
+        zip_codes: ['27601', '27603'],
+        website: 'https://harborshelter.example.org',
+        contact_info: { phone: '(919) 555-1101' },
+        distribution_schedule: 'Daily 6:00 PM - 9:00 PM'
+      },
+      {
+        external_key: 'shelter_nightbridge_2',
+        title: 'NightBridge Shelter Check-In',
+        description: 'Emergency overnight shelter and referral services.',
+        category_slug: 'shelters',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_nightbridge_shelter'],
+        location_label: 'Durham, NC',
+        zip_codes: ['27701', '27703'],
+        website: 'https://nightbridge.example.org',
+        contact_info: { phone: '(919) 555-1102' },
+        distribution_schedule: 'Daily 5:30 PM'
+      },
+      {
+        external_key: 'shelter_safehaven_3',
+        title: 'SafeHaven Family Beds',
+        description: 'Family shelter intake with children support staff.',
+        category_slug: 'shelters',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_safehaven_shelter'],
+        location_label: 'Cary, NC',
+        zip_codes: ['27511', '27513'],
+        website: 'https://safehaven.example.org',
+        contact_info: { phone: '(919) 555-1103' },
+        distribution_schedule: 'Mon-Sun 4:00 PM - 8:00 PM'
+      },
+      {
+        external_key: 'food_triangle_1',
+        title: 'Triangle Food Box Pickup',
+        description: 'Weekly produce and pantry staples.',
+        category_slug: 'pantry',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_triangle_food_bank'],
+        location_label: 'Raleigh, NC',
+        zip_codes: ['27601', '27610'],
+        website: 'https://trianglefood.example.org',
+        contact_info: { phone: '(919) 555-2201' },
+        distribution_schedule: 'Tue/Thu/Sat 10:00 AM - 2:00 PM'
+      },
+      {
+        external_key: 'food_freshroute_2',
+        title: 'FreshRoute Mobile Pantry',
+        description: 'Mobile distribution across Durham neighborhoods.',
+        category_slug: 'pantry',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_freshroute_food'],
+        location_label: 'Durham, NC',
+        zip_codes: ['27701', '27704'],
+        website: 'https://freshroute.example.org',
+        contact_info: { phone: '(919) 555-2202' },
+        distribution_schedule: 'Mon/Wed/Fri 11:30 AM - 4:30 PM'
+      },
+      {
+        external_key: 'food_mealbridge_3',
+        title: 'MealBridge Community Meals',
+        description: 'Prepared meals and pantry bags.',
+        category_slug: 'pantry',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_mealbridge_food'],
+        location_label: 'Cary, NC',
+        zip_codes: ['27511', '27560'],
+        website: 'https://mealbridge.example.org',
+        contact_info: { phone: '(919) 555-2203' },
+        distribution_schedule: 'Daily 12:00 PM'
+      },
+      {
+        external_key: 'food_openpantry_4',
+        title: 'Open Pantry Family Distribution',
+        description: 'Pantry pickup and senior delivery signups.',
+        category_slug: 'pantry',
+        listing_source: 'nonprofit',
+        nonprofit_id: byKey['np_openpantry_food'],
+        location_label: 'Chapel Hill, NC',
+        zip_codes: ['27514', '27516'],
+        website: 'https://openpantry.example.org',
+        contact_info: { phone: '(919) 555-2204' },
+        distribution_schedule: 'Mon-Sat 9:00 AM - 1:00 PM'
+      }
+    ]
+
+    const { error: listingsError } = await supabase
+      .from('resource_listings')
+      .upsert(listings, { onConflict: 'external_key' })
+
+    if (listingsError) return res.status(500).json({ error: listingsError.message })
+
+    return res.json({ ok: true, inserted_or_updated: listings.length })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Public: list active community events
+app.get('/events', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('community_events')
+      .select('*')
+      .eq('status', 'active')
+      .order('start_at', { ascending: true })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: data || [] })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Admin: create a community event post
+app.post('/events', async (req, res) => {
+  const adminUser = await requireAdmin(req, res)
+  if (!adminUser) return
+
+  const {
+    title,
+    description,
+    location_label,
+    start_at,
+    end_at = null,
+    zip_codes = [],
+    website = null
+  } = req.body
+
+  if (!title || !description || !location_label || !start_at) {
+    return res.status(400).json({ error: 'missing required fields: title, description, location_label, start_at' })
+  }
+
+  if (!Array.isArray(zip_codes)) {
+    return res.status(400).json({ error: 'zip_codes must be an array' })
+  }
+
+  try {
+    const payload = {
+      title,
+      description,
+      location_label,
+      start_at,
+      end_at,
+      zip_codes,
+      website,
+      status: 'active',
+      posted_by_user_id: adminUser.id
+    }
+
+    const { data, error } = await supabase
+      .from('community_events')
+      .insert([payload])
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(201).json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
 })
 
 // Register user in Supabase Auth + profile + optional roles
@@ -197,6 +948,287 @@ app.post('/auth/login', async (req, res) => {
   }
 })
 
+app.get('/users/me/profile', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  try {
+    const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+    return res.json({ data: profile })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.patch('/users/me/profile', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { email, zip_code = null } = req.body || {}
+  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : null
+  const normalizedZip =
+    typeof zip_code === 'string' ? zip_code.replace(/\D/g, '').slice(0, 5) : zip_code === null ? null : undefined
+
+  if (!normalizedEmail && normalizedZip === undefined) {
+    return res.status(400).json({ error: 'provide email and/or zip_code' })
+  }
+
+  if (normalizedZip !== undefined && normalizedZip !== null && normalizedZip.length !== 5) {
+    return res.status(400).json({ error: 'zip_code must be 5 digits when provided' })
+  }
+
+  try {
+    if (normalizedEmail) {
+      const { error: authErr } = await supabase.auth.admin.updateUserById(user.id, { email: normalizedEmail })
+      if (authErr) return res.status(500).json({ error: authErr.message })
+    }
+
+    const profilePatch = {}
+    if (normalizedEmail) profilePatch.email = normalizedEmail
+    if (normalizedZip !== undefined) profilePatch.zip_code = normalizedZip
+
+    const { data: updated, error: updateError } = await supabase
+      .from('profiles')
+      .update(profilePatch)
+      .eq('id', user.id)
+      .select('id, first_name, last_name, username, email, zip_code')
+      .single()
+
+    if (updateError || !updated) {
+      return res.status(500).json({ error: updateError?.message || 'failed to update profile' })
+    }
+
+    return res.json({ data: updated })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/users/me/password', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { new_password } = req.body || {}
+  if (typeof new_password !== 'string' || new_password.length < 8) {
+    return res.status(400).json({ error: 'new_password must be at least 8 characters' })
+  }
+
+  try {
+    const { error } = await supabase.auth.admin.updateUserById(user.id, { password: new_password })
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ ok: true })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/nonprofits/manage', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  try {
+    const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+
+    const username = profile.username || null
+    const nonprofitIds = new Set()
+
+    if (username) {
+      const { data: adminRows, error: adminErr } = await supabase
+        .from('nonprofit_admin_usernames')
+        .select('nonprofit_id')
+        .eq('username', username)
+      if (adminErr) return res.status(500).json({ error: adminErr.message })
+      for (const row of adminRows || []) {
+        if (row.nonprofit_id) nonprofitIds.add(row.nonprofit_id)
+      }
+    }
+
+    const { data: employeeRows, error: employeeErr } = await supabase
+      .from('nonprofit_employees')
+      .select('nonprofit_id')
+      .eq('user_id', user.id)
+      .eq('is_admin', true)
+    if (employeeErr) return res.status(500).json({ error: employeeErr.message })
+    for (const row of employeeRows || []) {
+      if (row.nonprofit_id) nonprofitIds.add(row.nonprofit_id)
+    }
+
+    const ids = [...nonprofitIds]
+    if (ids.length === 0) return res.json({ data: [] })
+
+    const { data: nonprofits, error: nonprofitsErr } = await supabase
+      .from('nonprofits')
+      .select('id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area')
+      .in('id', ids)
+    if (nonprofitsErr) return res.status(500).json({ error: nonprofitsErr.message })
+
+    const { data: usernameRows, error: usernamesErr } = await supabase
+      .from('nonprofit_admin_usernames')
+      .select('nonprofit_id, username')
+      .in('nonprofit_id', ids)
+    if (usernamesErr) return res.status(500).json({ error: usernamesErr.message })
+
+    const usernamesById = {}
+    for (const row of usernameRows || []) {
+      if (!usernamesById[row.nonprofit_id]) usernamesById[row.nonprofit_id] = []
+      usernamesById[row.nonprofit_id].push(row.username)
+    }
+
+    const result = (nonprofits || []).map((item) => ({
+      ...item,
+      verified_usernames: usernamesById[item.id] || []
+    }))
+
+    return res.json({ data: result })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.patch('/nonprofits/:nonprofitId/manage', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  const { description, distribution_schedule, zip_codes, addresses } = req.body || {}
+
+  try {
+    const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+
+    const { allowed, error: authErr } = await canUserManageNonprofit({
+      nonprofitId,
+      userId: user.id,
+      username: profile.username || null
+    })
+    if (authErr) return res.status(500).json({ error: authErr.message })
+    if (!allowed) return res.status(403).json({ error: 'not authorized to manage this nonprofit' })
+
+    const patch = {}
+    if (description !== undefined) patch.description = typeof description === 'string' ? description.trim() : null
+    if (distribution_schedule !== undefined) {
+      patch.distribution_schedule =
+        typeof distribution_schedule === 'string' ? distribution_schedule.trim() : null
+    }
+    if (zip_codes !== undefined) {
+      if (!Array.isArray(zip_codes)) return res.status(400).json({ error: 'zip_codes must be an array' })
+      patch.zip_codes = zip_codes
+        .map((value) => String(value || '').replace(/\D/g, '').slice(0, 5))
+        .filter((value) => value.length === 5)
+    }
+    if (addresses !== undefined) {
+      if (!Array.isArray(addresses)) return res.status(400).json({ error: 'addresses must be an array' })
+      patch.addresses = addresses
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: 'no supported nonprofit fields supplied' })
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('nonprofits')
+      .update(patch)
+      .eq('id', nonprofitId)
+      .select('id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area')
+      .single()
+    if (updateErr || !updated) return res.status(500).json({ error: updateErr?.message || 'failed to update nonprofit' })
+
+    const { data: usernameRows, error: usernamesErr } = await supabase
+      .from('nonprofit_admin_usernames')
+      .select('username')
+      .eq('nonprofit_id', nonprofitId)
+    if (usernamesErr) return res.status(500).json({ error: usernamesErr.message })
+
+    return res.json({
+      data: {
+        ...updated,
+        verified_usernames: (usernameRows || []).map((row) => row.username)
+      }
+    })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/nonprofits/:nonprofitId/admin-usernames', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  const { username } = req.body || {}
+  const normalizedUsername = typeof username === 'string' ? username.trim() : ''
+  if (!normalizedUsername) return res.status(400).json({ error: 'username is required' })
+
+  try {
+    const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+
+    const { allowed, error: authErr } = await canUserManageNonprofit({
+      nonprofitId,
+      userId: user.id,
+      username: profile.username || null
+    })
+    if (authErr) return res.status(500).json({ error: authErr.message })
+    if (!allowed) return res.status(403).json({ error: 'not authorized to manage this nonprofit' })
+
+    const { error: upsertErr } = await supabase
+      .from('nonprofit_admin_usernames')
+      .upsert([{ nonprofit_id: nonprofitId, username: normalizedUsername }], {
+        onConflict: 'nonprofit_id,username',
+        ignoreDuplicates: true
+      })
+    if (upsertErr) return res.status(500).json({ error: upsertErr.message })
+
+    return res.status(201).json({ ok: true, nonprofit_id: nonprofitId, username: normalizedUsername })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.delete('/nonprofits/:nonprofitId/admin-usernames/:username', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId, username } = req.params
+  if (!username) return res.status(400).json({ error: 'username is required' })
+
+  try {
+    const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+
+    const { allowed, error: authErr } = await canUserManageNonprofit({
+      nonprofitId,
+      userId: user.id,
+      username: profile.username || null
+    })
+    if (authErr) return res.status(500).json({ error: authErr.message })
+    if (!allowed) return res.status(403).json({ error: 'not authorized to manage this nonprofit' })
+
+    const { error: deleteErr } = await supabase
+      .from('nonprofit_admin_usernames')
+      .delete()
+      .eq('nonprofit_id', nonprofitId)
+      .eq('username', username)
+    if (deleteErr) return res.status(500).json({ error: deleteErr.message })
+
+    return res.json({ ok: true, nonprofit_id: nonprofitId, username })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
 // Compatibility route for existing frontend profile creation/upsert
 app.post('/create-profile', async (req, res) => {
   const {
@@ -277,14 +1309,15 @@ app.post('/nonprofits', async (req, res) => {
     website = null,
     zip_codes = [],
     addresses = [],
-    focus_area = 'other'
+    focus_area = 'miscellaneous'
   } = req.body
+  const normalizedFocusArea = normalizeFocusArea(focus_area)
 
   if (!name) {
     return res.status(400).json({ error: 'missing required field: name' })
   }
 
-  if (!ALLOWED_FOCUS_AREAS.has(focus_area)) {
+  if (!ALLOWED_FOCUS_AREAS.has(normalizedFocusArea)) {
     return res.status(400).json({ error: `invalid focus_area: ${focus_area}` })
   }
 
@@ -295,7 +1328,7 @@ app.post('/nonprofits', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('nonprofits')
-      .insert([{ name, website, zip_codes, addresses, focus_area }])
+      .insert([{ name, website, zip_codes, addresses, focus_area: normalizedFocusArea }])
       .select('*')
       .single()
 
