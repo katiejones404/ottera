@@ -37,7 +37,7 @@ export default function Header({
     <header className="main-header">
       <button type="button" className="logo-wrap" onClick={() => onNavigate("home")}>
         <img
-          src="/logo.png"
+          src="/icons/logo1.png"
           alt="Ottera logo"
           className="logo"
           onError={(event) => {
@@ -50,26 +50,49 @@ export default function Header({
       <nav ref={navRef} className="center-nav" aria-label="Primary navigation">
         <button
           type="button"
-          className={activePage === "home" ? "active" : ""}
+          className={`nav-tab ${activePage === "home" ? "active" : ""}`}
           onClick={() => onNavigate("home")}
         >
-          Home
+          <img
+            src="/icons/home.png"
+            alt="home icon"
+            className="nav-tab-icon"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span>Home</span>
         </button>
         <button
           type="button"
-          className={activePage === "resources" ? "active" : ""}
+          className={`nav-tab ${activePage === "resources" ? "active" : ""}`}
           onClick={() => onNavigate("resources")}
         >
-          Find Resources
+          <img
+            src="/icons/find.png"
+            alt="find resources icon"
+            className="nav-tab-icon"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span>Find Resources</span>
         </button>
         <button
           type="button"
-          className={activePage === "about" ? "active" : ""}
+          className={`nav-tab ${activePage === "about" ? "active" : ""}`}
           onClick={() => onNavigate("about")}
         >
-          About Us
+          <img
+            src="/icons/about.png"
+            alt="about us icon"
+            className="nav-tab-icon"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span>About Us</span>
         </button>
-
         {/* sliding underline */}
         <span
           className="nav-indicator"
