@@ -25,6 +25,17 @@ export type AuthResponse = {
   refresh_token: string;
 };
 
+export async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; refresh_token: string }> {
+  const res = await fetch(`${API_BASE}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Token refresh failed");
+  return data;
+}
+
 export async function registerUser(payload: AuthPayload): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
@@ -541,14 +552,36 @@ export async function deleteEvent(eventId: string, accessToken: string) {
   return data;
 }
 
-export async function submitRsvp(eventId: string, userId: string) {
+export async function submitRsvp(eventId: string, accessToken: string) {
   const res = await fetch(`${API_BASE}/rsvp`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ event_id: eventId, user_id: userId }),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ event_id: eventId }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Failed to RSVP");
+  return data;
+}
+
+export type RsvpEntry = { user_id: string; username: string | null; created_at: string };
+
+export async function fetchEventRsvps(eventId: string, accessToken: string): Promise<{ data: RsvpEntry[]; count: number }> {
+  const res = await fetch(`${API_BASE}/events/${eventId}/rsvps`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to fetch RSVPs");
+  return { data: data?.data || [], count: data?.count || 0 };
+}
+
+export async function toggleMessageLike(messageId: string, accessToken: string): Promise<{ liked: boolean; like_count: number }> {
+  const res = await fetch(`${API_BASE}/messages/${messageId}/like`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Failed to toggle like");
   return data;
 }
 
@@ -670,6 +703,8 @@ export type ConversationMessage = {
   content: string;
   event_id?: string | null;
   created_at: string;
+  like_count?: number;
+  liked_by_me?: boolean;
 };
 
 export type Conversation = {
@@ -680,6 +715,7 @@ export type Conversation = {
   nonprofits?: { id: string; name: string; logo_url?: string | null } | null;
   lastMessage?: ConversationMessage | null;
   otherUsername?: string | null;
+  otherFirstName?: string | null;
 };
 
 export async function fetchConversations(accessToken: string): Promise<Conversation[]> {
