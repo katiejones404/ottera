@@ -15,20 +15,21 @@ export default function Header({
   session,
   onSignOut,
 }: HeaderProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState({ left: 0, width: 0 });
 
   useEffect(() => {
-    const onDocClick = (event: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
+    const nav = navRef.current;
+    if (!nav) return;
+    const activeBtn = nav.querySelector<HTMLButtonElement>("button.active");
+    if (!activeBtn) return;
+    const navRect = nav.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    setIndicator({
+      left: btnRect.left - navRect.left,
+      width: btnRect.width,
+    });
+  }, [activePage]);
 
   return (
     <header className="main-header">
@@ -44,7 +45,7 @@ export default function Header({
         <span className="brand">Ottera</span>
       </button>
 
-      <nav className="center-nav" aria-label="Primary navigation">
+      <nav ref={navRef} className="center-nav" aria-label="Primary navigation">
         <button
           type="button"
           className={activePage === "home" ? "active" : ""}
@@ -66,6 +67,12 @@ export default function Header({
         >
           About Us
         </button>
+
+        {/* sliding underline */}
+        <span
+          className="nav-indicator"
+          style={{ left: indicator.left, width: indicator.width }}
+        />
       </nav>
 
       <div className="auth-actions">
