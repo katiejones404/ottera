@@ -2,14 +2,16 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
+const crypto = require('crypto')
 const supabase = require('./lib/supabaseAdmin')
 const supabaseAuth = require('./lib/supabaseAuth')
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '15mb' }))
 
 const PORT = process.env.PORT || 4000
+const NONPROFIT_MEDIA_BUCKET = process.env.SUPABASE_NONPROFIT_MEDIA_BUCKET || 'nonprofit-media'
 
 const ALLOWED_ROLES = new Set([
   'admin',
@@ -25,6 +27,13 @@ const normalizeFocusArea = (focusArea) => {
   if (!focusArea) return 'miscellaneous'
   if (focusArea === 'other') return 'miscellaneous'
   return focusArea
+}
+
+const mapFocusAreaToCategorySlug = (focusArea) => {
+  const normalized = normalizeFocusArea(focusArea)
+  if (normalized === 'food') return 'pantry'
+  if (normalized === 'shelter') return 'shelters'
+  return 'closet'
 }
 
 const getPrimaryRole = (roles = []) => {
@@ -64,6 +73,51 @@ const loadProfileByUserId = async (userId) =>
     .select('id, first_name, last_name, username, email, zip_code')
     .eq('id', userId)
     .single()
+
+const parseImageDataUrl = (dataUrl) => {
+  if (typeof dataUrl !== 'string') return null
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
+  if (!match) return null
+  const contentType = match[1]
+  const base64Payload = match[2]
+  const extensionByType = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif'
+  }
+  const extension = extensionByType[contentType]
+  if (!extension) return null
+
+  let buffer
+  try {
+    buffer = Buffer.from(base64Payload, 'base64')
+  } catch {
+    return null
+  }
+  if (!buffer || buffer.length === 0) return null
+  return { contentType, extension, buffer }
+}
+
+const uploadNonprofitMediaImage = async ({ nonprofitId, slotLabel, dataUrl }) => {
+  const parsed = parseImageDataUrl(dataUrl)
+  if (!parsed) return { publicUrl: null, error: new Error('invalid image data URL') }
+
+  const filename = `${slotLabel}-${Date.now()}-${crypto.randomUUID()}.${parsed.extension}`
+  const path = `nonprofits/${nonprofitId}/${filename}`
+
+  const { error: uploadErr } = await supabase.storage
+    .from(NONPROFIT_MEDIA_BUCKET)
+    .upload(path, parsed.buffer, {
+      upsert: true,
+      contentType: parsed.contentType,
+      cacheControl: '3600'
+    })
+  if (uploadErr) return { publicUrl: null, error: uploadErr }
+
+  const { data } = supabase.storage.from(NONPROFIT_MEDIA_BUCKET).getPublicUrl(path)
+  return { publicUrl: data?.publicUrl || null, error: null }
+}
 
 const canUserManageNonprofit = async ({ nonprofitId, userId, username }) => {
   if (!nonprofitId || !userId) return { allowed: false, error: null }
@@ -132,6 +186,7 @@ app.get('/', (req, res) => {
       'POST /resources/listings',
       'GET /nonprofits/manage',
       'PATCH /nonprofits/:nonprofitId/manage',
+      'POST /nonprofits/:nonprofitId/media',
       'POST /nonprofits/:nonprofitId/admin-usernames',
       'DELETE /nonprofits/:nonprofitId/admin-usernames/:username',
       'POST /partners/apply',
@@ -143,6 +198,10 @@ app.get('/', (req, res) => {
       'POST /events',
       'POST /users/:userId/roles',
       'POST /nonprofits',
+      'GET /nonprofits/:nonprofitId/profile',
+      'GET /nonprofits/:nonprofitId/subscription',
+      'POST /nonprofits/:nonprofitId/subscription',
+      'DELETE /nonprofits/:nonprofitId/subscription',
       'POST /nonprofits/:nonprofitId/employees',
       'GET /nonprofits/:nonprofitId/employees',
       'POST /nonprofits/:nonprofitId/subscribe',
@@ -161,7 +220,7 @@ app.get('/resources/listings', async (req, res) => {
     const { data, error } = await supabase
       .from('resource_listings')
       .select(
-        'id, title, description, category_slug, listing_source, nonprofit_id, posted_by_username, location_label, zip_codes, website, contact_info, distribution_schedule, status, nonprofits:nonprofit_id(id, name, website, approval_status, focus_area)'
+        'id, title, description, category_slug, listing_source, nonprofit_id, posted_by_username, location_label, zip_codes, website, contact_info, distribution_schedule, status, nonprofits:nonprofit_id(id, name, website, approval_status, focus_area, zip_codes, photo_urls, logo_url)'
       )
       .eq('status', 'active')
 
@@ -172,7 +231,61 @@ app.get('/resources/listings', async (req, res) => {
       return row.nonprofits && row.nonprofits.approval_status === 'approved'
     })
 
-    return res.json({ data: approvedRows })
+    const nonprofitIdsWithActiveListings = new Set(
+      approvedRows
+        .filter((row) => row.listing_source === 'nonprofit' && row.nonprofit_id)
+        .map((row) => row.nonprofit_id)
+    )
+
+    const { data: approvedNonprofits, error: nonprofitsError } = await supabase
+      .from('nonprofits')
+      .select(
+        'id, name, website, approval_status, focus_area, zip_codes, photo_urls, logo_url, description, distribution_schedule, addresses, contact_email, contact_phone'
+      )
+      .eq('approval_status', 'approved')
+
+    if (nonprofitsError) return res.status(500).json({ error: nonprofitsError.message })
+
+    const synthesizedRows = (approvedNonprofits || [])
+      .filter((nonprofit) => !nonprofitIdsWithActiveListings.has(nonprofit.id))
+      .map((nonprofit) => {
+        const firstAddress = Array.isArray(nonprofit.addresses) ? nonprofit.addresses[0] : null
+        const city = firstAddress?.city
+        const state = firstAddress?.state
+        const zip = firstAddress?.zip
+        const locationLabel = [city, state].filter(Boolean).join(', ') || zip || 'Location not provided'
+
+        return {
+          id: `nonprofit-${nonprofit.id}`,
+          title: nonprofit.name,
+          description: nonprofit.description || 'Community resource provider',
+          category_slug: mapFocusAreaToCategorySlug(nonprofit.focus_area),
+          listing_source: 'nonprofit',
+          nonprofit_id: nonprofit.id,
+          posted_by_username: null,
+          location_label: locationLabel,
+          zip_codes: Array.isArray(nonprofit.zip_codes) ? nonprofit.zip_codes : [],
+          website: nonprofit.website || null,
+          contact_info: {
+            email: nonprofit.contact_email || null,
+            phone: nonprofit.contact_phone || null
+          },
+          distribution_schedule: nonprofit.distribution_schedule || null,
+          status: 'active',
+          nonprofits: {
+            id: nonprofit.id,
+            name: nonprofit.name,
+            website: nonprofit.website || null,
+            approval_status: nonprofit.approval_status || 'approved',
+            focus_area: nonprofit.focus_area || null,
+            zip_codes: Array.isArray(nonprofit.zip_codes) ? nonprofit.zip_codes : [],
+            photo_urls: Array.isArray(nonprofit.photo_urls) ? nonprofit.photo_urls : [],
+            logo_url: nonprofit.logo_url || null
+          }
+        }
+      })
+
+    return res.json({ data: [...approvedRows, ...synthesizedRows] })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
@@ -1064,7 +1177,7 @@ app.get('/nonprofits/manage', async (req, res) => {
 
     const { data: nonprofits, error: nonprofitsErr } = await supabase
       .from('nonprofits')
-      .select('id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area')
+      .select('id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area, photo_urls, logo_url')
       .in('id', ids)
     if (nonprofitsErr) return res.status(500).json({ error: nonprofitsErr.message })
 
@@ -1096,7 +1209,7 @@ app.patch('/nonprofits/:nonprofitId/manage', async (req, res) => {
   if (!user) return
 
   const { nonprofitId } = req.params
-  const { description, distribution_schedule, zip_codes, addresses } = req.body || {}
+  const { description, distribution_schedule, zip_codes, addresses, photo_urls, logo_url } = req.body || {}
 
   try {
     const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
@@ -1128,6 +1241,17 @@ app.patch('/nonprofits/:nonprofitId/manage', async (req, res) => {
       if (!Array.isArray(addresses)) return res.status(400).json({ error: 'addresses must be an array' })
       patch.addresses = addresses
     }
+    if (photo_urls !== undefined) {
+      if (!Array.isArray(photo_urls)) return res.status(400).json({ error: 'photo_urls must be an array' })
+      const normalizedPhotoUrls = photo_urls
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .slice(0, 4)
+      patch.photo_urls = normalizedPhotoUrls
+    }
+    if (logo_url !== undefined) {
+      patch.logo_url = logo_url ? String(logo_url).trim() : null
+    }
 
     if (Object.keys(patch).length === 0) {
       return res.status(400).json({ error: 'no supported nonprofit fields supplied' })
@@ -1137,7 +1261,7 @@ app.patch('/nonprofits/:nonprofitId/manage', async (req, res) => {
       .from('nonprofits')
       .update(patch)
       .eq('id', nonprofitId)
-      .select('id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area')
+      .select('id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area, photo_urls, logo_url')
       .single()
     if (updateErr || !updated) return res.status(500).json({ error: updateErr?.message || 'failed to update nonprofit' })
 
@@ -1153,6 +1277,81 @@ app.patch('/nonprofits/:nonprofitId/manage', async (req, res) => {
         verified_usernames: (usernameRows || []).map((row) => row.username)
       }
     })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/nonprofits/:nonprofitId/media', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  const { kind, slot = null, data_url } = req.body || {}
+
+  if (!['logo', 'photo'].includes(kind)) {
+    return res.status(400).json({ error: "kind must be 'logo' or 'photo'" })
+  }
+  if (kind === 'photo' && (!Number.isInteger(slot) || slot < 0 || slot > 3)) {
+    return res.status(400).json({ error: 'photo uploads require slot between 0 and 3' })
+  }
+  if (typeof data_url !== 'string' || data_url.length < 20) {
+    return res.status(400).json({ error: 'data_url is required and must be a valid image data URL' })
+  }
+
+  try {
+    const { data: profile, error: profileError } = await loadProfileByUserId(user.id)
+    if (profileError || !profile) {
+      return res.status(500).json({ error: profileError?.message || 'missing profile for user' })
+    }
+
+    const { allowed, error: authErr } = await canUserManageNonprofit({
+      nonprofitId,
+      userId: user.id,
+      username: profile.username || null
+    })
+    if (authErr) return res.status(500).json({ error: authErr.message })
+    if (!allowed) return res.status(403).json({ error: 'not authorized to manage this nonprofit' })
+
+    const { data: nonprofitRow, error: nonprofitErr } = await supabase
+      .from('nonprofits')
+      .select('id, photo_urls, logo_url')
+      .eq('id', nonprofitId)
+      .maybeSingle()
+    if (nonprofitErr) return res.status(500).json({ error: nonprofitErr.message })
+    if (!nonprofitRow) return res.status(404).json({ error: 'nonprofit not found' })
+
+    const slotLabel = kind === 'logo' ? 'logo' : `photo-${slot + 1}`
+    const { publicUrl, error: uploadErr } = await uploadNonprofitMediaImage({
+      nonprofitId,
+      slotLabel,
+      dataUrl: data_url
+    })
+    if (uploadErr || !publicUrl) {
+      return res.status(500).json({ error: uploadErr?.message || 'failed to upload image' })
+    }
+
+    const patch = {}
+    if (kind === 'logo') {
+      patch.logo_url = publicUrl
+    } else {
+      const nextPhotos = Array.isArray(nonprofitRow.photo_urls) ? [...nonprofitRow.photo_urls] : []
+      while (nextPhotos.length < 4) nextPhotos.push('')
+      nextPhotos[slot] = publicUrl
+      patch.photo_urls = nextPhotos.filter(Boolean).slice(0, 4)
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('nonprofits')
+      .update(patch)
+      .eq('id', nonprofitId)
+      .select('id, photo_urls, logo_url')
+      .single()
+    if (updateErr || !updated) {
+      return res.status(500).json({ error: updateErr?.message || 'failed to save uploaded media' })
+    }
+
+    return res.status(201).json({ data: updated })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
@@ -1384,6 +1583,107 @@ app.get('/nonprofits/:nonprofitId/employees', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message })
     return res.json({ data })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+// Public nonprofit profile with active listings
+app.get('/nonprofits/:nonprofitId/profile', async (req, res) => {
+  const { nonprofitId } = req.params
+
+  try {
+    const { data: nonprofit, error: nonprofitErr } = await supabase
+      .from('nonprofits')
+      .select(
+        'id, name, website, description, distribution_schedule, zip_codes, addresses, focus_area, photo_urls, logo_url, contact_email, contact_phone'
+      )
+      .eq('id', nonprofitId)
+      .maybeSingle()
+
+    if (nonprofitErr) return res.status(500).json({ error: nonprofitErr.message })
+    if (!nonprofit) return res.status(404).json({ error: 'nonprofit not found' })
+
+    const { data: listings, error: listingsErr } = await supabase
+      .from('resource_listings')
+      .select('id, title, description, category_slug, location_label, zip_codes, distribution_schedule, status')
+      .eq('nonprofit_id', nonprofitId)
+      .eq('status', 'active')
+
+    if (listingsErr) return res.status(500).json({ error: listingsErr.message })
+
+    const { data: usernames, error: usernamesErr } = await supabase
+      .from('nonprofit_admin_usernames')
+      .select('username')
+      .eq('nonprofit_id', nonprofitId)
+    if (usernamesErr) return res.status(500).json({ error: usernamesErr.message })
+
+    return res.json({
+      data: {
+        ...nonprofit,
+        verified_usernames: (usernames || []).map((row) => row.username),
+        listings: listings || []
+      }
+    })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/nonprofits/:nonprofitId/subscription', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  try {
+    const { data, error } = await supabase
+      .from('nonprofit_subscribers')
+      .select('nonprofit_id')
+      .eq('nonprofit_id', nonprofitId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ data: { subscribed: Boolean(data) } })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/nonprofits/:nonprofitId/subscription', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  try {
+    const { error } = await supabase
+      .from('nonprofit_subscribers')
+      .upsert([{ nonprofit_id: nonprofitId, user_id: user.id }], {
+        onConflict: 'nonprofit_id,user_id',
+        ignoreDuplicates: true
+      })
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(201).json({ ok: true, nonprofit_id: nonprofitId, user_id: user.id, subscribed: true })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.delete('/nonprofits/:nonprofitId/subscription', async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
+  const { nonprofitId } = req.params
+  try {
+    const { error } = await supabase
+      .from('nonprofit_subscribers')
+      .delete()
+      .eq('nonprofit_id', nonprofitId)
+      .eq('user_id', user.id)
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ ok: true, nonprofit_id: nonprofitId, user_id: user.id, subscribed: false })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
