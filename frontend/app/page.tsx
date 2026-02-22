@@ -1,5 +1,4 @@
 "use client";
-//.
 import { useState } from "react";
 import Header from "./components/Header";
 import PortalShell from "./components/PortalShell";
@@ -25,7 +24,7 @@ function getInitialPage(): string {
 }
 
 export default function Home() {
-  const [activePage, setActivePage] = useState("home");
+  const [activePage, setActivePage] = useState(getInitialPage);
   const [session, setSession] = useState<Account | null>(
     () => loadSession()?.account ?? null
   );
@@ -49,6 +48,7 @@ export default function Home() {
           <PortalShell session={session} onReturnToLanding={handleSignOut} />
         ) : (
           <PublicLanding
+            activePage={activePage}
             onEnterPortal={() => setActivePage("resources")}
             onNavigate={setActivePage}
           />

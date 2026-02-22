@@ -348,6 +348,8 @@ main {
   border-radius: 0;
   padding: 0;
   background: transparent;
+}
+
 .signup-main {
   width: min(700px, 92vw);
   margin: 2rem auto;
@@ -437,6 +439,7 @@ main {
   .resource-row-track {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 .signup-form label {
   display: grid;
   gap: 0.35rem;
